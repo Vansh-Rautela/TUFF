@@ -1,0 +1,58 @@
+# Python Virtual Environments
+venv/
+Backend/venv/
+env/
+.venv/
+ENV/
+*.venv
+
+# Python Cache & Compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Node.js dependencies & builds
+node_modules/
+dist/
+dist-ssr/
+build/
+out/
+Frontend/package-lock.json
+
+# Environment configs & secrets
+.env
+Backend/.env
+*.env
+*.env.local
+
+# Database & SQLite files
+Backend/product_cache.db
+*.db
+*.sqlite
+*.sqlite3
+
+# User-generated data
+Backend/uploads/*
+!Backend/uploads/.gitkeep
+Backend/user_data/*
+!Backend/user_data/.gitkeep
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Scraping Debug & Temporary files
+Backend/Webscraping/*debug.html
+Backend/Webscraping/*error.png
+Backend/Webscraping/.conda/
+Backend/Webscraping/amazon_products.csv
+
