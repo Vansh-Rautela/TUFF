@@ -3,20 +3,59 @@ import numpy as np
 import colorsys
 import math
 import os
-import mediapipe as mp
+import threading
+
+from color_palettes import get_complementary_colors, get_season_palette
+
+try:
+    import mediapipe as mp
+    _MEDIAPIPE_IMPORT_ERROR = None if hasattr(mp, 'solutions') else (
+        "installed mediapipe has no 'solutions' API (pin mediapipe==0.10.21)")
+except Exception as import_error:  # pragma: no cover - depends on the environment
+    mp = None
+    _MEDIAPIPE_IMPORT_ERROR = str(import_error)
+
 
 class FacialColorAnalyzer:
     def __init__(self):
         """
-        Initialize the Facial Color Analyzer using MediaPipe face detection
+        Initialize the Facial Color Analyzer.
+
+        Uses MediaPipe face detection + face mesh when available. If MediaPipe is
+        missing or incompatible, falls back to OpenCV's bundled Haar cascade so
+        color analysis still works (with region-based skin sampling).
         """
+        # MediaPipe graphs are not thread-safe; Flask serves requests on threads.
+        self._lock = threading.Lock()
+        self.face_detection = None
+        self.face_detection_full_range = None
+        self.face_mesh = None
+        self.haar_cascade = None
+        self.detector_name = None
+
+        if _MEDIAPIPE_IMPORT_ERROR is None:
+            self._init_mediapipe()
+            self.detector_name = 'mediapipe'
+        else:
+            print(f"MediaPipe unavailable ({_MEDIAPIPE_IMPORT_ERROR}); using OpenCV Haar cascade.")
+            cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
+            self.haar_cascade = cv2.CascadeClassifier(cascade_path)
+            if self.haar_cascade.empty():
+                raise RuntimeError('No face detector available: MediaPipe and OpenCV Haar cascade both failed to load.')
+            self.detector_name = 'opencv-haar'
+
+    def _init_mediapipe(self):
         try:
-            # Initialize MediaPipe Face Detection
+            # Initialize MediaPipe Face Detection. Both models are created once:
+            # 0 = short range (selfies), 1 = full range (fallback).
             self.mp_face_detection = mp.solutions.face_detection
-            self.mp_drawing = mp.solutions.drawing_utils
             self.face_detection = self.mp_face_detection.FaceDetection(
-                model_selection=0,  # Changed to 0 for close-range detection
-                min_detection_confidence=0.5  # Reduced for close-up photos
+                model_selection=0,
+                min_detection_confidence=0.5
+            )
+            self.face_detection_full_range = self.mp_face_detection.FaceDetection(
+                model_selection=1,
+                min_detection_confidence=0.5
             )
             
             # Initialize MediaPipe Face Mesh for more detailed landmarks
@@ -124,25 +163,36 @@ class FacialColorAnalyzer:
         face_ratio = face_area / image_area
         return face_ratio > 0.4
 
+    def get_face_region_haar(self, image):
+        """
+        Detect the largest face with OpenCV's Haar cascade (fallback detector).
+        Haar gives no confidence score, so a fixed 0.6 is reported.
+        """
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        min_side = max(40, min(image.shape[:2]) // 10)
+        faces = self.haar_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(min_side, min_side))
+        if len(faces) == 0:
+            return None
+        x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+        return {"x": int(x), "y": int(y), "width": int(w), "height": int(h), "confidence": 0.6}
+
     def get_face_region_mediapipe(self, image):
         """
         Detect face region using MediaPipe Face Detection with improved accuracy
         """
+        if self.face_detection is None:
+            return self.get_face_region_haar(image)
+
         height, width = image.shape[:2]
         
         # Convert BGR to RGB for MediaPipe
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        # Try both detection models
+        # Try the short-range model first, then the full-range model.
         results = self.face_detection.process(rgb_image)
         
         if not results.detections:
-            # Try with the other model if first fails
-            self.face_detection = self.mp_face_detection.FaceDetection(
-                model_selection=1,  # Full-range model
-                min_detection_confidence=0.5
-            )
-            results = self.face_detection.process(rgb_image)
+            results = self.face_detection_full_range.process(rgb_image)
         
         if results.detections:
             # Get the most confident detection
@@ -151,11 +201,11 @@ class FacialColorAnalyzer:
             
             # Convert relative coordinates to absolute coordinates
             face_region = {
-                "x": int(bbox.xmin * width),
-                "y": int(bbox.ymin * height),
+                "x": max(0, int(bbox.xmin * width)),
+                "y": max(0, int(bbox.ymin * height)),
                 "width": int(bbox.width * width),
                 "height": int(bbox.height * height),
-                "confidence": best_detection.score[0]
+                "confidence": float(best_detection.score[0])
             }
             
             # Adaptive padding based on face size
@@ -178,6 +228,9 @@ class FacialColorAnalyzer:
         """
         Get detailed face landmarks using MediaPipe Face Mesh
         """
+        if self.face_mesh is None:
+            return None
+
         height, width = image.shape[:2]
         
         # Convert BGR to RGB for MediaPipe
@@ -441,45 +494,11 @@ class FacialColorAnalyzer:
 
     def get_complementary_colors(self, season):
         """Get complementary colors for the determined season"""
-        seasonal_palettes = {
-            "Spring": [
-                {"color": "#FFDAB9", "name": "Peach", "hex": "#FFDAB9"},
-                {"color": "#FFE4B5", "name": "Moccasin", "hex": "#FFE4B5"},
-                {"color": "#FA8072", "name": "Salmon", "hex": "#FA8072"},
-                {"color": "#F4A460", "name": "Sandy Brown", "hex": "#F4A460"}
-            ],
-            "Summer": [
-                {"color": "#C0C0FF", "name": "Periwinkle", "hex": "#C0C0FF"},
-                {"color": "#DDA0DD", "name": "Plum", "hex": "#DDA0DD"},
-                {"color": "#B0E0E6", "name": "Powder Blue", "hex": "#B0E0E6"},
-                {"color": "#FFC0CB", "name": "Pink", "hex": "#FFC0CB"}
-            ],
-            "Autumn": [
-                {"color": "#8B4513", "name": "Saddle Brown", "hex": "#8B4513"},
-                {"color": "#A0522D", "name": "Sienna", "hex": "#A0522D"},
-                {"color": "#D2691E", "name": "Chocolate", "hex": "#D2691E"},
-                {"color": "#556B2F", "name": "Olive", "hex": "#556B2F"}
-            ],
-            "Winter": [
-                {"color": "#00008B", "name": "Dark Blue", "hex": "#00008B"},
-                {"color": "#4682B4", "name": "Steel Blue", "hex": "#4682B4"},
-                {"color": "#008B8B", "name": "Teal", "hex": "#008B8B"},
-                {"color": "#B0C4DE", "name": "Light Steel Blue", "hex": "#B0C4DE"}
-            ]
-        }
-        
-        return seasonal_palettes.get(season, seasonal_palettes["Spring"])
+        return get_complementary_colors(season)
 
     def get_seasonal_description(self, season):
         """Get description for the seasonal color type"""
-        descriptions = {
-            "Spring": "Warm and bright colors that enhance your golden undertone.",
-            "Summer": "Soft, cool colors that complement your delicate undertone.", 
-            "Autumn": "Rich, warm earthy tones that enhance your natural depth.",
-            "Winter": "Bold, cool colors that create striking contrast with your skin."
-        }
-        
-        return descriptions.get(season, "Colors that complement your unique skin tone.")
+        return get_season_palette(season)['description']
 
     def create_debug_image(self, image, face_region, sampling_points, valid_samples):
         """
@@ -506,18 +525,38 @@ class FacialColorAnalyzer:
 
     def analyze_face_color(self, image_path, debug=False):
         """
-        Main function to analyze facial color with improved close-up handling
+        Analyze facial color from an image file on disk.
         """
+        if not image_path or not os.path.exists(image_path):
+            return {"error": "Image file not found. Please check the file path."}
+
+        image = cv2.imread(image_path)
+        if image is None:
+            return {"error": "Could not load image. Please check the file format. Supported formats: JPG, PNG, BMP, TIFF."}
+
+        result = self.analyze_image(image)
+        if debug and "error" not in result:
+            try:
+                debug_img = self.create_debug_image(image, result["face_region"], result["samplingPoints"], [])
+                debug_path = image_path.replace('.jpg', '_debug.jpg').replace('.png', '_debug.png')
+                cv2.imwrite(debug_path, debug_img)
+                result["debug_image_path"] = debug_path
+            except Exception as debug_error:
+                result["debug_warning"] = f"Could not create debug image: {str(debug_error)}"
+        return result
+
+    def analyze_image(self, image):
+        """
+        Main function to analyze facial color from a decoded BGR image array.
+        """
+        with self._lock:
+            return self._analyze_image(image)
+
+    def _analyze_image(self, image):
         try:
-            # Validate input
-            if not image_path or not os.path.exists(image_path):
-                return {"error": "Image file not found. Please check the file path."}
-            
-            # Load image
-            image = cv2.imread(image_path)
             if image is None:
-                return {"error": "Could not load image. Please check the file format. Supported formats: JPG, PNG, BMP, TIFF."}
-            
+                return {"error": "Could not load image."}
+
             # Check if image is valid
             if len(image.shape) != 3 or image.shape[2] != 3:
                 return {"error": "Invalid image format. Please provide a color image."}
@@ -597,31 +636,32 @@ class FacialColorAnalyzer:
                     "confidence": face_region.get("confidence", 0.5)
                 },
                 "samplingPoints": [{"x": int(p["x"]), "y": int(p["y"])} for p in sampling_points],
-                "landmarks_used": landmarks is not None and len(landmarks) > 0
+                "landmarks_used": landmarks is not None and len(landmarks) > 0,
+                "palette": get_season_palette(seasonal_type),
+                "method": self.detector_name,
+                "disclaimer": "Estimated from photo pixels; lighting, filters and makeup can shift the result.",
             }
-            
-            # Add debug image if requested
-            if debug:
-                try:
-                    debug_img = self.create_debug_image(image, face_region, sampling_points, filtered_samples)
-                    # Save debug image
-                    debug_path = image_path.replace('.jpg', '_debug.jpg').replace('.png', '_debug.png')
-                    cv2.imwrite(debug_path, debug_img)
-                    result["debug_image_path"] = debug_path
-                except Exception as debug_error:
-                    result["debug_warning"] = f"Could not create debug image: {str(debug_error)}"
             
             return result
             
         except Exception as e:
-            return {"error": f"Analysis failed: {str(e)}"}
+            print(f"Color analysis failed: {e}")
+            return {"error": "Analysis failed while processing this photo. Please try a different, well-lit photo."}
+
+    def close(self):
+        """Release MediaPipe resources."""
+        for name in ('face_detection', 'face_detection_full_range', 'face_mesh'):
+            resource = getattr(self, name, None)
+            if resource is not None:
+                resource.close()
+                setattr(self, name, None)
 
     def __del__(self):
         """Clean up MediaPipe resources"""
-        if hasattr(self, 'face_detection'):
-            self.face_detection.close()
-        if hasattr(self, 'face_mesh'):
-            self.face_mesh.close()
+        try:
+            self.close()
+        except Exception:
+            pass
 
 
 # Usage example function
@@ -637,9 +677,10 @@ def analyze_uploaded_image(image_path, debug=False):
         dict: Complete color analysis results
     """
     analyzer = FacialColorAnalyzer()
-    result = analyzer.analyze_face_color(image_path, debug)
-    analyzer.__del__()  # Clean up resources
-    return result
+    try:
+        return analyzer.analyze_face_color(image_path, debug)
+    finally:
+        analyzer.close()
 
 # Example usage
 if __name__ == "__main__":

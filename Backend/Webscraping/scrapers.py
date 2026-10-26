@@ -1,8 +1,10 @@
 import pandas as pd
 import time
 import re
+from urllib.parse import quote, quote_plus
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from driver import make_chrome
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
@@ -21,7 +23,7 @@ def get_driver():
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--log-level=3")
-    return webdriver.Chrome(options=options)
+    return make_chrome(options)
 
 def clean_price(price_text):
     """Extracts numeric value from price string, returns 'No price' if not found."""
@@ -47,12 +49,20 @@ def scroll_page_fully(driver, scroll_times=8, wait_sec=2.5):
 def scrape_amazon(query):
     """Scrapes product data from Amazon - keeping your working version."""
     driver = get_driver()
-    url = f"https://www.amazon.in/s?k={query.replace(' ', '+')}"
+    url = f"https://www.amazon.in/s?k={quote_plus(query)}"
     print(f"Scraping Amazon URL: {url}")
+    data = {"Title": [], "Price": [], "Image": [], "Link": []}
+    try:
+        _scrape_amazon_results(driver, url, data)
+    finally:
+        driver.quit()
+    return pd.DataFrame(data)
+
+
+def _scrape_amazon_results(driver, url, data):
     driver.get(url) 
     # time.sleep(3)
     products = driver.find_elements(By.XPATH, "//div[@data-component-type='s-search-result']")
-    data = {"Title": [], "Price": [], "Image": [], "Link": []}
     for p in products[:20]:
         try:
             # Multiple title selectors for Amazon
@@ -95,13 +105,11 @@ def scrape_amazon(query):
         data["Price"].append(clean_price(price))
         data["Image"].append(image)
         data["Link"].append(link)
-    driver.quit()
-    return pd.DataFrame(data)
 
 def scrape_flipkart(query):
     """Improved Flipkart scraper with better selectors and longer wait times."""
     driver = get_driver()
-    url = f"https://www.flipkart.com/search?q={query.replace(' ', '+')}"
+    url = f"https://www.flipkart.com/search?q={quote_plus(query)}"
     print(f"Scraping Flipkart URL: {url}")
     driver.get(url)
     data = {"Title": [], "Price": [], "Image": [], "Link": []}
@@ -222,7 +230,7 @@ def scrape_flipkart(query):
 
 def scrape_myntra(query):
     driver = get_driver()
-    url = f"https://www.myntra.com/{query.replace(' ', '-')}"
+    url = f"https://www.myntra.com/{quote(query.strip().replace(' ', '-'))}"
     print(f"Scraping Myntra URL: {url}")
     data = {"Title": [], "Price": [], "Image": [], "Rating": [], "Link": []}
     try:
@@ -266,7 +274,7 @@ def get_driverY():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    return webdriver.Chrome(options=options)
+    return make_chrome(options)
 
 def clean_priceY(text):
     import re

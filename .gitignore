@@ -56,3 +56,9 @@ Backend/Webscraping/*error.png
 Backend/Webscraping/.conda/
 Backend/Webscraping/amazon_products.csv
 
+
+# Local tooling
+Backend/.venv/
+.pytest_cache/
+Backend/Webscraping/*.png
+Backend/*.png

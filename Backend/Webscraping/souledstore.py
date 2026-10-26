@@ -3,6 +3,7 @@ import time
 import re
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from driver import make_chrome
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
@@ -24,7 +25,7 @@ def get_driver():
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
     
-    driver = webdriver.Chrome(options=chrome_options)
+    driver = make_chrome(chrome_options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
     return driver
