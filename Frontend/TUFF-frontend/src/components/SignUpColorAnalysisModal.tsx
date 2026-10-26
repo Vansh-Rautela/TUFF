@@ -11,6 +11,10 @@ import { useSignUpUser } from "@/context/SignUpUserContext";
 import { ColorCircle } from "./../components/ColorCircle";
 
 import { useNavigate } from 'react-router-dom';
+import { api, errorMessage } from '@/lib/api';
+import { ImageInputError, prepareImageForUpload } from '@/lib/image';
+import { STORAGE_KEYS, getOrCreateUserId, saveGenderAndBody, writeJSON } from '@/lib/session';
+import type { ColorAnalysisResult } from '@/types/fashion';
 
 export default function SignUpColorAnalysisModal({
   open,
@@ -20,7 +24,7 @@ export default function SignUpColorAnalysisModal({
   bodyType = ''
 }: {
   open: boolean,
-  onOpenChange: (open: boolean, colorAnalysis?: any, photoFile?: File | null) => void,
+  onOpenChange: (open: boolean, colorAnalysis?: ColorAnalysisResult, photoFile?: File | null) => void,
   brands?: string[],
   gender?: string,
   bodyType?: string
@@ -30,7 +34,8 @@ export default function SignUpColorAnalysisModal({
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoURL, setPhotoURL] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
-  const [analysisResult, setAnalysisResult] = useState<any | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<ColorAnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [showResult, setShowResult] = useState<boolean>(false);
   const { setUserData } = useSignUpUser();
 
@@ -79,32 +84,25 @@ export default function SignUpColorAnalysisModal({
                 if (!photo) return;
                 try {
                   setLoading(true);
-                  // Read file as Data URL (base64)
-                  const fileAsDataUrl = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(photo);
-                  });
-
-                  const resp = await fetch('http://localhost:5000/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: fileAsDataUrl })
-                  });
-                  const json = await resp.json();
-                  if (!resp.ok || json.error) {
-                    throw new Error(json.error || 'Analysis failed');
-                  }
+                  setError(null);
+                  const json = await api.analyzeImage(await prepareImageForUpload(photo));
 
                   setAnalysisResult(json);
                   setShowResult(true);
 
-                  // Save into signup user context for prompt generation later
+                  // Save into signup user context, and persist the profile so
+                  // the swipe flow and personalized feed can use it.
                   setUserData({ colorAnalysisResult: json, photo });
+                  writeJSON(STORAGE_KEYS.colorAnalysis, json);
+                  saveGenderAndBody(gender, bodyType);
+                  api.updateProfile(getOrCreateUserId(), {
+                    color_analysis: json,
+                    gender: gender || undefined,
+                    body_type: bodyType || undefined,
+                    favorite_brands: brands,
+                  }).catch((err) => console.error('Failed to save profile:', err));
                 } catch (e) {
-                  console.error(e);
-                  alert('Could not analyze your photo. Please try another image with good lighting.');
+                  setError(e instanceof ImageInputError ? e.message : errorMessage(e, 'Could not analyze your photo. Please try another image with good lighting.'));
                 } finally {
                   setLoading(false);
                 }
@@ -112,6 +110,7 @@ export default function SignUpColorAnalysisModal({
             >
               {loading ? 'Analyzing…' : 'Analyze & Continue'}
             </Button>
+            {error && <p role="alert" className="text-sm text-red-600 mb-2">{error}</p>}
           </div>
         </div>
       </DialogContent>
@@ -139,7 +138,7 @@ export default function SignUpColorAnalysisModal({
               <div>
                 <div className="text-sm text-neutral-600 mb-2">Suggested Colors</div>
                 <div className="flex flex-wrap gap-3">
-                  {analysisResult.complementaryColors.slice(0, 6).map((c: any, idx: number) => (
+                  {analysisResult.complementaryColors.slice(0, 6).map((c, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <div className="rounded-full w-6 h-6 border" style={{ backgroundColor: c.hex || c.color }} />
                       <span className="text-xs text-neutral-700">{c.name || c.hex}</span>
@@ -151,7 +150,7 @@ export default function SignUpColorAnalysisModal({
             {photoURL && (
               <div className="flex items-center gap-3">
                 <img src={photoURL} alt="Uploaded" className="w-12 h-12 object-cover rounded-full border" />
-                <span className="text-xs text-neutral-600">Photo saved for reference</span>
+                <span className="text-xs text-neutral-600">Your photo is analyzed and not stored</span>
               </div>
             )}
             <div className="flex gap-3 pt-2">

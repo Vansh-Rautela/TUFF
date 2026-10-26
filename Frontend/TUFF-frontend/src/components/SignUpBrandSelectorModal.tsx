@@ -130,23 +130,10 @@ export default function SignUpBrandSelectorModal({ open, onOpenChange }: { open:
       </Dialog>
       <SignUpColorAnalysisModal
         open={showColorModal}
-        onOpenChange={(open, colorAnalysisData, photoFile) => {
+        onOpenChange={(open) => {
           setShowColorModal(open);
-          if (!open) {
-            // Gather all onboarding data and navigate
-            if (typeof window !== 'undefined') {
-              // Use custom event or context for data passing if needed
-              // For now, use localStorage or window variable as a bridge
-              window.__TUFF_ONBOARDING__ = {
-                brands: selected,
-                gender: selectedGender,
-                bodyType: selectedBodyType,
-                colorAnalysis: colorAnalysisData,
-                photo: photoFile
-              };
-            }
-            onOpenChange(false);
-          }
+          // Onboarding data travels via SignUpUserContext and navigation state.
+          if (!open) onOpenChange(false);
         }}
         brands={selected}
         gender={selectedGender}

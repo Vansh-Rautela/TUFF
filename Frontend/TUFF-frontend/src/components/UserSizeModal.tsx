@@ -2,20 +2,14 @@ import React, { useState } from 'react';
 import { X, ShoppingBag, User, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-interface ClothingSizes {
-    gender: string;
-    physique: string;
-    tops: string;
-    bottoms: string;
-    shoes: string;
-    dresses?: string;
-}
+import type { ClothingSizes } from '@/types/fashion';
 
 interface UserSizeModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSubmit: (sizes: ClothingSizes) => void;
     gender?: string;
+    physique?: string;
 }
 
 const genders = ['Male', 'Female', 'Unisex'];
@@ -29,11 +23,12 @@ export const UserSizeModal: React.FC<UserSizeModalProps> = ({
     isOpen,
     onClose,
     onSubmit,
-    gender: defaultGender
+    gender: defaultGender,
+    physique: defaultPhysique
 }) => {
     const [sizes, setSizes] = useState<ClothingSizes>({
         gender: defaultGender || 'Male',
-        physique: 'Average',
+        physique: defaultPhysique || 'Average',
         tops: 'M',
         bottoms: '32',
         shoes: '9',
@@ -41,8 +36,8 @@ export const UserSizeModal: React.FC<UserSizeModalProps> = ({
     });
 
     const handleSubmit = () => {
+        // onClose means "skip"; the parent moves on after onSubmit.
         onSubmit(sizes);
-        onClose();
     };
 
     if (!isOpen) return null;

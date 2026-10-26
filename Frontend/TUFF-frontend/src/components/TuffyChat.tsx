@@ -3,12 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Sparkles, Stars, Zap, ShoppingBag } from 'lucide-react';
 import ProductCardMini from './ProductCardMini';
 import { useTuffyCart } from '../hooks/useTuffyCart';
+import { ApiError, api } from '@/lib/api';
+import { getOrCreateUserId } from '@/lib/session';
+import type { MiniProduct, Product, TuffyUserData } from '@/types/fashion';
 
 interface TuffyChatProps {
     isOpen: boolean;
     onClose: () => void;
     userId: string;
-    userData: any;
+    userData: TuffyUserData;
 }
 
 interface Message {
@@ -16,9 +19,19 @@ interface Message {
     text: string;
     sender: 'user' | 'tuffy';
     timestamp: Date;
-    products?: any[];
+    products?: MiniProduct[];
     showBrandSelector?: boolean;
 }
+
+const FALLBACK_REPLY = "✨ My divine powers are temporarily unavailable. Please try again in a moment!";
+
+const toMiniProduct = (p: Product, brand: string): MiniProduct => ({
+    product_title: p.title || 'Stylish Piece',
+    product_brand: p.brand || brand,
+    product_price: p.price || 'Check Price',
+    product_image: p.thumbnail || '',
+    product_link: p.link,
+});
 
 export const TuffyChat: React.FC<TuffyChatProps> = ({
     isOpen,
@@ -38,6 +51,8 @@ export const TuffyChat: React.FC<TuffyChatProps> = ({
     const [inputMessage, setInputMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    // Chat works before onboarding too; fall back to this device's id.
+    const [chatUserId] = useState(() => userId || getOrCreateUserId());
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -66,75 +81,46 @@ export const TuffyChat: React.FC<TuffyChatProps> = ({
         setIsLoading(true);
 
         try {
-            let endpoint = 'http://localhost:5000/tuffy/chat';
-            let body: any = {
-                userId,
-                message: text,
-                userData
-            };
-
-            // If brand context is present, use show_products endpoint
             if (brandContext) {
-                endpoint = 'http://localhost:5000/tuffy/show_products';
+                // Show products for the user's last request from the chosen brand.
                 const lastUserMsg = [...messages].reverse().find(m => m.sender === 'user')?.text || "outfit";
-                body = {
-                    query: `${lastUserMsg} ${brandContext}`,
-                    brand: brandContext,
-                    limit: 5 // Get more products
-                };
-            }
-
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                if (data.products && data.products.length > 0) {
-                    // Handle product response
-                    const productMessage: Message = {
-                        id: (Date.now() + 1).toString(),
-                        text: `✨ Divine choices from ${brandContext}! Here are some pieces I've selected for you:`,
-                        sender: 'tuffy',
-                        timestamp: new Date(),
-                        products: data.products.map((p: any) => ({
-                            product_title: p.title || p.product_title || 'Stylish Piece',
-                            product_brand: p.brand || p.product_brand || brandContext,
-                            product_price: p.price || p.product_price || p.display_price || 'Check Price',
-                            product_image: p.image || p.product_image || '',
-                            product_link: p.link || p.product_link || '#'
-                        }))
-                    };
-                    setMessages((prev) => [...prev, productMessage]);
-                } else {
-                    // Handle text response
-                    // Check if TUFFY is asking about brands to trigger selector
-                    const showBrands = data.tuffy_says.toLowerCase().includes('brand') &&
-                        (data.tuffy_says.includes('?') || data.tuffy_says.toLowerCase().includes('which'));
-
-                    const tuffyMessage: Message = {
-                        id: (Date.now() + 1).toString(),
-                        text: data.tuffy_says,
-                        sender: 'tuffy',
-                        timestamp: new Date(),
-                        showBrandSelector: showBrands
-                    };
-                    setMessages(prev => [...prev, tuffyMessage]);
-                }
+                const data = await api.tuffyProducts(lastUserMsg, brandContext, userData.gender, 5);
+                const found = data.products.length > 0;
+                setMessages((prev) => [...prev, {
+                    id: (Date.now() + 1).toString(),
+                    text: found
+                        ? `✨ Divine choices from ${brandContext}! Here are some pieces I've selected for you:`
+                        : `✨ ${brandContext} didn't return anything for that just now. Try another brand?`,
+                    sender: 'tuffy',
+                    timestamp: new Date(),
+                    // The API returns `thumbnail`; the old code read `image`, so chat cards had no pictures.
+                    products: data.products.map((p) => toMiniProduct(p, brandContext)),
+                    showBrandSelector: !found,
+                }]);
             } else {
-                throw new Error(data.error);
+                const data = await api.tuffyChat(chatUserId, text, userData);
+                // Check if TUFFY is asking about brands to trigger selector
+                const reply = data.tuffy_says;
+                const showBrands = reply.toLowerCase().includes('brand') &&
+                    (reply.includes('?') || reply.toLowerCase().includes('which'));
+
+                setMessages(prev => [...prev, {
+                    id: (Date.now() + 1).toString(),
+                    text: reply,
+                    sender: 'tuffy',
+                    timestamp: new Date(),
+                    showBrandSelector: showBrands
+                }]);
             }
         } catch (error) {
-            const errorMessage: Message = {
+            // A 503 carries a friendly "not configured" message from the server.
+            const body = error instanceof ApiError ? (error.body as { tuffy_says?: string } | null) : null;
+            setMessages(prev => [...prev, {
                 id: (Date.now() + 1).toString(),
-                text: "✨ My divine powers are temporarily unavailable. Please try again in a moment!",
+                text: body?.tuffy_says || FALLBACK_REPLY,
                 sender: 'tuffy',
                 timestamp: new Date()
-            };
-            setMessages(prev => [...prev, errorMessage]);
+            }]);
         } finally {
             setIsLoading(false);
         }
@@ -180,7 +166,7 @@ export const TuffyChat: React.FC<TuffyChatProps> = ({
 
                 <motion.div
                     className="relative w-full max-w-md bg-gradient-to-br from-purple-900 via-purple-800 to-pink-900 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col"
-                    style={{ height: '600px' }}
+                    style={{ height: 'min(600px, calc(100dvh - 2rem))' }}
                     initial={{ opacity: 0, scale: 0.9, y: 100 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 100 }}
@@ -222,7 +208,7 @@ export const TuffyChat: React.FC<TuffyChatProps> = ({
                                         <span className="text-xs text-white font-bold">{cartCount}</span>
                                     </div>
                                 )}
-                                <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                                <button onClick={onClose} aria-label="Close chat" className="p-2 hover:bg-white/10 rounded-full transition-colors">
                                     <X size={20} className="text-white" />
                                 </button>
                             </div>
@@ -258,9 +244,9 @@ export const TuffyChat: React.FC<TuffyChatProps> = ({
                                 {/* Products Carousel */}
                                 {message.products && message.products.length > 0 && (
                                     <div className="w-full overflow-x-auto mt-2 pb-2 pl-1 flex gap-3">
-                                        {message.products.map((product, idx) => (
+                                        {message.products.map((product) => (
                                             <ProductCardMini
-                                                key={idx}
+                                                key={product.product_link}
                                                 product={product}
                                                 onAddToCart={addToCart}
                                                 onAddToWishlist={addToWishlist}
@@ -325,13 +311,16 @@ export const TuffyChat: React.FC<TuffyChatProps> = ({
                                 type="text"
                                 value={inputMessage}
                                 onChange={(e) => setInputMessage(e.target.value)}
-                                onKeyPress={handleKeyPress}
+                                onKeyDown={handleKeyPress}
                                 placeholder="Ask about style, outfits, trends..."
+                                aria-label="Message TUFFY"
+                                maxLength={2000}
                                 className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:border-yellow-400/50 focus:ring-2 focus:ring-yellow-400/20"
                                 disabled={isLoading}
                             />
                             <button
                                 onClick={() => sendMessage()}
+                                aria-label="Send message"
                                 disabled={!inputMessage.trim() || isLoading}
                                 className="p-3 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-xl hover:from-yellow-500 hover:to-orange-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >

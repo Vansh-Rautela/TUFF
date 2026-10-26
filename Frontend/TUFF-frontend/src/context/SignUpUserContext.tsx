@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
+import type { ColorAnalysisResult } from '@/types/fashion';
 
 export interface SignUpUserData {
   name?: string;
@@ -7,7 +8,7 @@ export interface SignUpUserData {
   username?: string;
   bodyType?: string;
   brands?: string[];
-  colorAnalysisResult?: any;
+  colorAnalysisResult?: ColorAnalysisResult | null;
   photo?: File | null;
 }
 
@@ -29,7 +30,8 @@ export const SignUpUserProvider = ({ children }: { children: ReactNode }) => {
 
   const resetUserData = () => setUserDataState({});
 
-  // Utility: generate a prompt for LLM/webscraping
+  // Utility: summarize the profile for an LLM. Contains personal data (name,
+  // date of birth): never send it to retailer search or other third parties.
   const generateLLMPrompt = () => {
     const { name, dob, gender, username, bodyType, brands, colorAnalysisResult } = userData;
     let prompt = `User Profile for Personalized Fashion Product Search:\n`;

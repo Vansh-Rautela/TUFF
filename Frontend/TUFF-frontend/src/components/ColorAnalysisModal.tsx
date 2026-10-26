@@ -1,11 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Camera, Upload, Loader2, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { api, errorMessage } from '@/lib/api';
+import { ImageInputError, prepareImageForUpload } from '@/lib/image';
+import type { ColorAnalysisResult } from '@/types/fashion';
 
 interface ColorAnalysisModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onComplete: (analysis: any) => void;
+    onComplete: (analysis: ColorAnalysisResult | null) => void;
 }
 
 export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
@@ -15,19 +18,23 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
 }) => {
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [analysis, setAnalysis] = useState<any>(null);
+    const [analysis, setAnalysis] = useState<ColorAnalysisResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const advanceTimer = useRef<ReturnType<typeof setTimeout>>();
 
-    const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    useEffect(() => () => clearTimeout(advanceTimer.current), []);
+
+    const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setSelectedImage(reader.result as string);
-                setError(null);
-            };
-            reader.readAsDataURL(file);
+        event.target.value = '';
+        if (!file) return;
+        try {
+            setError(null);
+            setSelectedImage(await prepareImageForUpload(file));
+        } catch (err) {
+            setSelectedImage(null);
+            setError(err instanceof ImageInputError ? err.message : 'Could not read that photo.');
         }
     };
 
@@ -38,38 +45,15 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
         setError(null);
 
         try {
-            const response = await fetch('http://localhost:5000/analyze', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    image: selectedImage,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Analysis failed');
-            }
-
-            const data = await response.json();
-
-            if (data.error) {
-                setError(data.error);
-                setIsAnalyzing(false);
-                return;
-            }
-
+            const data = await api.analyzeImage(selectedImage);
             setAnalysis(data);
-            setIsAnalyzing(false);
 
             // Auto-complete after 2 seconds to show results
-            setTimeout(() => {
-                onComplete(data);
-            }, 2000);
-
+            advanceTimer.current = setTimeout(() => onComplete(data), 2000);
         } catch (err) {
-            setError('Failed to analyze image. Please try again.');
+            // The backend explains what went wrong (e.g. "No face detected...").
+            setError(errorMessage(err, 'Failed to analyze image. Please try again.'));
+        } finally {
             setIsAnalyzing(false);
         }
     };
@@ -102,6 +86,7 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
                         </div>
                         <button
                             onClick={onClose}
+                            aria-label="Close"
                             className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                         >
                             <X size={24} />
@@ -121,7 +106,16 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
 
                                 {/* Image Preview or Upload Area */}
                                 <div
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={selectedImage ? 'Change photo' : 'Upload a photo'}
                                     onClick={() => fileInputRef.current?.click()}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            fileInputRef.current?.click();
+                                        }
+                                    }}
                                     className={`relative border-2 border-dashed rounded-xl p-8 mb-6 cursor-pointer transition-all ${selectedImage
                                             ? 'border-purple-500 bg-purple-50'
                                             : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'
@@ -140,6 +134,7 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
                                                     setSelectedImage(null);
                                                     setError(null);
                                                 }}
+                                                aria-label="Remove photo"
                                                 className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
                                             >
                                                 <X size={16} />
@@ -152,7 +147,7 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
                                                 Click to upload your photo
                                             </p>
                                             <p className="text-sm text-gray-500">
-                                                JPG, PNG or BMP (Max 5MB)
+                                                JPG, PNG or WebP · face clearly visible, natural light
                                             </p>
                                         </div>
                                     )}
@@ -168,7 +163,7 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
 
                                 {/* Error Message */}
                                 {error && (
-                                    <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                    <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg" role="alert">
                                         <p className="text-red-600 text-sm">{error}</p>
                                     </div>
                                 )}
@@ -222,7 +217,7 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
                                         Your Perfect Colors
                                     </h4>
                                     <div className="flex justify-center gap-3 flex-wrap">
-                                        {analysis.complementaryColors?.map((color: any, idx: number) => (
+                                        {analysis.complementaryColors?.map((color, idx) => (
                                             <div key={idx} className="text-center">
                                                 <div
                                                     className="w-16 h-16 rounded-full border-4 border-white shadow-lg mb-2"
@@ -234,6 +229,9 @@ export const ColorAnalysisModal: React.FC<ColorAnalysisModalProps> = ({
                                     </div>
                                 </div>
 
+                                {analysis.disclaimer && (
+                                    <p className="text-xs text-gray-500 mb-3">{analysis.disclaimer}</p>
+                                )}
                                 <p className="text-sm text-gray-600">
                                     Proceeding to style preferences...
                                 </p>

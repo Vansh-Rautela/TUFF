@@ -1,7 +1,10 @@
 import { useEffect, useState, useRef } from "react";
-import { Link } from "react-router-dom";
-import axios from "axios";
+import { Link, useNavigate } from "react-router-dom";
 import { useSignUpUser } from "@/context/SignUpUserContext";
+import ProductImage from "@/components/ProductImage";
+import { api, errorMessage, isAbortError } from "@/lib/api";
+import { STORAGE_KEYS, getOrCreateUserId, getSavedGender, readJSON, writeJSON } from "@/lib/session";
+import type { Product } from "@/types/fashion";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,37 +13,37 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
-  Home, MessageCircle, Heart, User, Search, Camera, 
-  Filter, X, ChevronLeft, ChevronRight, ExternalLink, ShoppingBag
+  Home, MessageCircle, Heart, Sparkles, Search, Camera, 
+  ChevronLeft, ChevronRight, ExternalLink, ShoppingBag
 } from "lucide-react";
 import amazonVideo1 from "@/assets/TUFFAI_Finds_Brands_for_Amazon (1).mp4";
 import amazonVideo2 from "@/assets/TUFFAI_Finds_Brands_for_Amazon.mp4";
 import adImage3 from "@/assets/Gemini_Generated_Image_wcgd3awcgd3awcgd.png";
 import adImage1 from "@/assets/Gemini_Generated_Image_say4c9say4c9say4.png";
 
-// --- MOCK DATA (placeholders) ---
+// Promotional carousel (bundled assets only)
 const adContent = [
   { type: 'image', src: adImage1 },
   { type: 'video', src: amazonVideo1 },
   { type: 'image', src: adImage3 },
   { type: 'video', src: amazonVideo2 },
-  { type: 'image', src: 'https://via.placeholder.com/1200x350/98FB98/2E8B57?text=Sustainable+Fashion' },
-  { type: 'image', src: 'https://via.placeholder.com/1200x350/ADD8E6/191970?text=Explore+Our+Brands' },
-  { type: 'image', src: 'https://via.placeholder.com/1200x350/F08080/800000?text=Limited+Time+Offers' },
 ];
+
+/** Keep the on-device history of seen product links bounded. */
+const MAX_SEARCHED_PRODUCTS = 200;
 
 // Brands supported by backend scrapers mapping
 const brands = ['Amazon', 'Flipkart', 'Nykaa', 'Myntra', 'Zara', 'H&M', 'Levis', 'Lifestyle', 'Ajio', 'Bewakoof', 'Westside', 'Urbanic', 'Libas', 'Monte Carlo', 'Souled Store'];
 const styles = ['Casual', 'Formal', 'Sporty', 'Ethnic', 'Partywear'];
 const prices = ['Under 500', '500-1000', '1000-2000', '2000-5000', 'Above 5000'];
 
-// --- INTERFACES ---
-interface Product {
-  title: string;
-  link: string;
-  thumbnail: string;
-  price?: string;
-  brand?: string;
+type FilterType = 'brands' | 'styles' | 'prices';
+type Filters = Record<FilterType, string[]>;
+
+function rememberSearchedProducts(products: Product[]) {
+  const previous = readJSON<string[]>(STORAGE_KEYS.searchedProducts) || [];
+  const merged = Array.from(new Set([...previous, ...products.map((p) => p.link)]));
+  writeJSON(STORAGE_KEYS.searchedProducts, merged.slice(-MAX_SEARCHED_PRODUCTS));
 }
 
 // --- SUBCOMPONENTS ---
@@ -95,78 +98,56 @@ const FilterSection = ({ title, items, selected, onToggle, onClear }: FilterSect
 
 // --- MAIN PAGE COMPONENT ---
 const ProductSuggestPage = () => {
-  const { userData, generateLLMPrompt } = useSignUpUser();
+  const navigate = useNavigate();
+  const { userData } = useSignUpUser();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentAd, setCurrentAd] = useState(0);
   const adCarouselRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const intervalRef = useRef<NodeJS.Timeout>();
+  const intervalRef = useRef<ReturnType<typeof setInterval>>();
 
-  const [filters, setFilters] = useState({ brands: [], styles: [], prices: [] });
-
-  // Initialize filters from signup data (brands) once on mount
-  useEffect(() => {
-    if (userData?.brands && Array.isArray(userData.brands) && userData.brands.length) {
-      setFilters(prev => ({ ...prev, brands: userData.brands as any }));
-    }
-  }, []);
+  // Brands chosen during sign-up seed the filter (read once, so there is no second fetch).
+  const [filters, setFilters] = useState<Filters>(() => ({
+    brands: Array.isArray(userData?.brands) ? userData.brands : [],
+    styles: [],
+    prices: [],
+  }));
+  const [searchQuery, setSearchQuery] = useState('');
+  const [appliedQuery, setAppliedQuery] = useState('');
 
   // --- EFFECTS ---
   useEffect(() => {
-    const fetchProducts = async () => {
+    const controller = new AbortController();
+    const gender = getSavedGender() || userData?.gender;
+
+    (async () => {
       setLoading(true);
       setError(null);
       try {
-        // Get gender from localStorage or userData
-        const savedGender = localStorage.getItem('userGender') || userData?.gender;
-        if (savedGender) {
-          localStorage.setItem('userGender', savedGender);
-        }
-
-        // Get userId from localStorage
-        const userId = localStorage.getItem('userId') || `user_${Date.now()}`;
-        localStorage.setItem('userId', userId);
-
-        // Build userData with gender always included
-        const enhancedUserData = {
-          ...userData,
-          userId: userId,
-          gender: savedGender || userData?.gender,
-        };
-
-        // Get search prompt (gender and cloth type will be added automatically in backend)
-        const searchPrompt = generateLLMPrompt();
-
-        const response = await axios.post(
-          "http://localhost:5000/scrape_products",
-          { 
-            prompt: searchPrompt, 
-            userData: enhancedUserData, 
-            filters 
-          }
-        );
-        
-        const fetchedProducts = response.data.products || [];
-        
-        // Track searched products in localStorage
-        const searchedProducts = JSON.parse(localStorage.getItem('searchedProducts') || '[]');
-        const newLinks = fetchedProducts.map((p: Product) => p.link);
-        const updatedSearchedProducts = Array.from(new Set([...searchedProducts, ...newLinks]));
-        localStorage.setItem('searchedProducts', JSON.stringify(updatedSearchedProducts));
-
-        console.log(`Fetched ${fetchedProducts.length} products from backend`);
-        setProducts(fetchedProducts);
-      } catch (err: any) {
+        // Only the typed search text goes to retailers; profile details stay private.
+        const response = await api.searchProducts({
+          userId: getOrCreateUserId(),
+          gender: gender || undefined,
+          brands: filters.brands,
+          filters,
+          prompt: appliedQuery,
+        }, controller.signal);
+        rememberSearchedProducts(response.products);
+        setProducts(response.products);
+        setLoading(false);
+      } catch (err) {
+        if (isAbortError(err)) return; // superseded by a newer search
         console.error("Fetch error:", err);
-        setError("Failed to fetch product suggestions.");
+        setError(errorMessage(err, "Failed to fetch product suggestions."));
         setProducts([]);
+        setLoading(false);
       }
-      setLoading(false);
-    };
-    fetchProducts();
-  }, [filters, userData, generateLLMPrompt]);
+    })();
+
+    return () => controller.abort();
+  }, [filters, appliedQuery, userData?.gender]);
 
   useEffect(() => {
     const advanceSlide = () => {
@@ -197,7 +178,7 @@ const ProductSuggestPage = () => {
   }, [currentAd]);
 
   // --- HANDLERS ---
-  const handleFilterToggle = (type, value) => {
+  const handleFilterToggle = (type: FilterType, value: string) => {
     setFilters(prev => ({
       ...prev,
       [type]: prev[type].includes(value)
@@ -206,67 +187,25 @@ const ProductSuggestPage = () => {
     }));
   };
 
-  const handleClearSection = (type: 'brands' | 'prices' | 'styles') => {
+  const handleClearSection = (type: FilterType) => {
     setFilters(prev => ({ ...prev, [type]: [] }));
   };
 
   const clearFilters = () => setFilters({ brands: [], styles: [], prices: [] });
 
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const handleSearch = async (query: string) => {
-    if (!query.trim()) return;
-    
-    setSearchQuery(query);
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Get gender from localStorage
-      const savedGender = localStorage.getItem('userGender') || userData?.gender;
-      const userId = localStorage.getItem('userId') || `user_${Date.now()}`;
-      
-      // Build search query with gender and cloth type
-      const enhancedUserData = {
-        ...userData,
-        userId: userId,
-        gender: savedGender || userData?.gender,
-      };
-
-      const response = await axios.post(
-        "http://localhost:5000/scrape_products",
-        { 
-          prompt: query, // Gender and cloth type will be added automatically in backend
-          userData: enhancedUserData, 
-          filters 
-        }
-      );
-      
-      const fetchedProducts = response.data.products || [];
-      
-      // Track searched products in localStorage
-      const searchedProducts = JSON.parse(localStorage.getItem('searchedProducts') || '[]');
-      const newLinks = fetchedProducts.map((p: Product) => p.link);
-      const updatedSearchedProducts = Array.from(new Set([...searchedProducts, ...newLinks]));
-      localStorage.setItem('searchedProducts', JSON.stringify(updatedSearchedProducts));
-
-      console.log(`Search result: ${fetchedProducts.length} products`);
-      setProducts(fetchedProducts);
-    } catch (err: any) {
-      console.error("Search error:", err);
-      setError("Failed to fetch product suggestions.");
-      setProducts([]);
-    }
-    setLoading(false);
+  const handleSearch = (query: string) => {
+    const trimmed = query.trim();
+    if (trimmed) setAppliedQuery(trimmed);
   };
 
   const noProductsFound = !loading && !error && products.length === 0;
 
+  // Every target here is a real route (the old /ask-tuff, /wishlist and /profile were 404s).
   const navItems = [
     { icon: Home, label: 'Home', path: '/' },
-    { icon: MessageCircle, label: 'Ask TUFF', path: '/ask-tuff' },
-    { icon: Heart, label: 'Wishlist', path: '/wishlist' },
-    { icon: User, label: 'Profile', path: '/profile' },
+    { icon: MessageCircle, label: 'Ask TUFF', path: '/home' },
+    { icon: Heart, label: 'Saved', path: '/liked' },
+    { icon: Sparkles, label: 'Swipe', path: '/swipe' },
   ];
 
   return (
@@ -275,21 +214,21 @@ const ProductSuggestPage = () => {
       <header className="sticky top-0 z-30 w-full bg-white/90 backdrop-blur-lg border-b border-purple-100 shadow-sm">
         <div className="container mx-auto flex items-center justify-between h-16 px-4">
           <Link to="/" className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-700">TUFF</Link>
-          <div className="flex items-center space-x-4">
+          <nav className="flex items-center space-x-1 sm:space-x-4" aria-label="Main">
             {navItems.map(item => (
               <Button key={item.label} variant="ghost" asChild>
-                <Link to={item.path} className="flex items-center">
+                <Link to={item.path} className="flex items-center" aria-label={item.label}>
                   <item.icon className="h-5 w-5 mr-2" />
                   <span className="hidden md:inline">{item.label}</span>
                 </Link>
               </Button>
             ))}
-          </div>
+          </nav>
         </div>
       </header>
 
       {/* Advertising Carousel */}
-      <div className="relative w-full h-[350px] overflow-hidden bg-gray-200">
+      <div className="relative w-full h-[200px] sm:h-[350px] overflow-hidden bg-gray-200">
         <div
           ref={adCarouselRef}
           className="flex h-full transition-transform duration-700 ease-in-out"
@@ -298,7 +237,7 @@ const ProductSuggestPage = () => {
           {adContent.map((ad, index) => (
             <div key={index} className="w-full h-full flex-shrink-0">
               {ad.type === 'image' ? (
-                <img src={ad.src} alt={`Ad ${index + 1}`} className="w-full h-full object-cover" />
+                <img src={ad.src} alt={`Promotion ${index + 1}`} loading={index === 0 ? 'eager' : 'lazy'} className="w-full h-full object-cover" />
               ) : (
                 <video 
                   ref={ad.type === 'video' ? videoRef : null}
@@ -313,8 +252,8 @@ const ProductSuggestPage = () => {
             </div>
           ))}
         </div>
-        <Button variant="ghost" size="icon" className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/50 hover:bg-white/90 text-purple-700" onClick={() => setCurrentAd(c => (c - 1 + adContent.length) % adContent.length)}><ChevronLeft /></Button>
-        <Button variant="ghost" size="icon" className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/50 hover:bg-white/90 text-purple-700" onClick={() => setCurrentAd(c => (c + 1) % adContent.length)}><ChevronRight /></Button>
+        <Button variant="ghost" size="icon" aria-label="Previous slide" className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/50 hover:bg-white/90 text-purple-700" onClick={() => setCurrentAd(c => (c - 1 + adContent.length) % adContent.length)}><ChevronLeft /></Button>
+        <Button variant="ghost" size="icon" aria-label="Next slide" className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/50 hover:bg-white/90 text-purple-700" onClick={() => setCurrentAd(c => (c + 1) % adContent.length)}><ChevronRight /></Button>
       </div>
 
       <main className="container mx-auto p-4 md:p-6">
@@ -335,38 +274,47 @@ const ProductSuggestPage = () => {
           {/* Main Content */}
           <div className="w-full md:w-3/4 lg:w-4/5">
             {/* Search Bar */}
-            <div className="mb-6 flex gap-2">
+            <form
+              className="mb-6 flex gap-2"
+              role="search"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSearch(searchQuery);
+              }}
+            >
               <div className="relative flex-grow">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-purple-400" />
                 <Input 
-                  placeholder="Search products, brands..." 
+                  type="search"
+                  aria-label="Search products"
+                  placeholder="Search products, e.g. olive kurta" 
                   className="pl-11 h-11 bg-white border-purple-200 focus:ring-purple-500"
                   value={searchQuery}
+                  maxLength={120}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      if (searchQuery.trim()) {
-                        // Trigger search with gender and cloth type
-                        handleSearch(searchQuery);
-                      }
-                    }
-                  }}
                 />
               </div>
               <Button 
+                type="submit"
                 variant="outline" 
                 size="icon" 
+                aria-label="Search"
                 className="h-11 w-11 bg-white border-purple-200"
-                onClick={() => {
-                  if (searchQuery.trim()) {
-                    handleSearch(searchQuery);
-                  }
-                }}
               >
                 <Search className="h-5 w-5" />
               </Button>
-              <Button variant="outline" size="icon" className="h-11 w-11 bg-white border-purple-200"><Camera className="h-5 w-5" /></Button>
-            </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label="Find your colors with a photo"
+                title="Find your colors with a photo"
+                className="h-11 w-11 bg-white border-purple-200"
+                onClick={() => navigate('/color-analysis')}
+              >
+                <Camera className="h-5 w-5" />
+              </Button>
+            </form>
 
             {/* Product Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -374,7 +322,7 @@ const ProductSuggestPage = () => {
                 Array.from({ length: 8 }).map((_, i) => <ProductSkeleton key={i} />)
               ) : error ? (
                 <div className="col-span-full text-center py-20">
-                  <p className="text-red-500 font-semibold">{error}</p>
+                  <p className="text-red-500 font-semibold" role="alert">{error}</p>
                   <p className="text-muted-foreground mt-2">Sorry, we couldn't generate your outfit. Please try again.</p>
                 </div>
               ) : noProductsFound ? (
@@ -385,19 +333,20 @@ const ProductSuggestPage = () => {
                 </div>
               ) : (
                 products.map((product, index) => (
-                  <a href={product.link} target="_blank" rel="noopener noreferrer" key={index} className="block group animate-in fade-in-0 zoom-in-95 duration-500" style={{ animationDelay: `${index * 50}ms`}}>
+                  <a href={product.link} target="_blank" rel="noopener noreferrer" key={product.link} className="block group animate-in fade-in-0 zoom-in-95 duration-500 rounded-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-400" style={{ animationDelay: `${Math.min(index, 12) * 50}ms`}}>
                     <Card className="overflow-hidden h-full flex flex-col bg-white rounded-lg shadow-sm hover:shadow-xl transition-shadow duration-300 border-purple-100">
                       <CardContent className="p-0 flex-grow flex flex-col">
-                        <div className="aspect-w-1 aspect-h-1 w-full overflow-hidden rounded-t-lg">
-                          <img src={product.thumbnail} alt={product.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        <div className="aspect-square w-full overflow-hidden rounded-t-lg bg-purple-50">
+                          <ProductImage src={product.thumbnail} alt={product.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                         </div>
                         <div className="p-4 flex flex-col flex-grow">
                           {product.brand && <p className="text-xs text-purple-500 uppercase font-semibold tracking-wider">{product.brand}</p>}
-                          <h3 className="text-base font-semibold text-purple-900 leading-tight flex-grow my-1 min-h-[40px]">{product.title}</h3>
+                          <h3 className="text-base font-semibold text-purple-900 leading-tight flex-grow my-1 min-h-[40px] line-clamp-2">{product.title}</h3>
                           {product.price && <p className="text-lg font-bold text-purple-900 mb-3">{product.price}</p>}
-                          <Button variant="outline" size="sm" className="w-full mt-auto bg-purple-600 text-white hover:bg-purple-700 border-purple-600">
-                            View Product <ExternalLink className="inline-block h-4 w-4 ml-2" />
-                          </Button>
+                          {/* A span, not a button: the whole card is already the link. */}
+                          <span className="inline-flex items-center justify-center w-full mt-auto h-9 rounded-md text-sm font-medium bg-purple-600 text-white group-hover:bg-purple-700">
+                            View Product <ExternalLink className="inline-block h-4 w-4 ml-2" aria-hidden="true" />
+                          </span>
                         </div>
                       </CardContent>
                     </Card>

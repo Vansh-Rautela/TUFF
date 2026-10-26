@@ -1,218 +1,127 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SwipeInterface from '../components/SwipeInterface';
 import UserSizeModal from '../components/UserSizeModal';
 import StylePreferencesModal from '../components/StylePreferencesModal';
 import ColorAnalysisModal from '../components/ColorAnalysisModal';
 import LoadingScreen from '../components/LoadingScreen';
-import { Loader2, AlertCircle } from 'lucide-react';
-
-interface Product {
-    id?: string;
-    title: string;
-    brand?: string;
-    price?: string;
-    thumbnail: string;
-    link: string;
-    category?: string;
-    color?: string;
-    style?: string;
-    tags?: string[];
-    recommendation_score?: number;
-}
+import { AlertCircle } from 'lucide-react';
+import { api, errorMessage, isAbortError } from '@/lib/api';
+import {
+    STORAGE_KEYS,
+    getOrCreateUserId,
+    getSavedBodyType,
+    getSavedGender,
+    hasStored,
+    profileCache,
+    saveGenderAndBody,
+    writeJSON,
+} from '@/lib/session';
+import type { ClothingSizes, ColorAnalysisResult, Product, ProfileUpdates, StylePreferences } from '@/types/fashion';
 
 type FlowStep = 'color-analysis' | 'sizes' | 'preferences' | 'loading' | 'swipe';
 
+const SWIPE_BRANDS = ['Amazon', 'Flipkart', 'Myntra'];
+
 export const SwipePage: React.FC = () => {
     const navigate = useNavigate();
-    const [userId] = useState(() => localStorage.getItem('userId') || `user_${Date.now()}`);
+    const [userId] = useState(getOrCreateUserId);
     const [products, setProducts] = useState<Product[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [currentStep, setCurrentStep] = useState<FlowStep>('color-analysis');
-    const [colorAnalysis, setColorAnalysis] = useState<any>(null);
-    const [userInfo] = useState<any>(() => {
-        // Get gender from localStorage or default
-        const savedGender = localStorage.getItem('userGender');
-        const savedBodyType = localStorage.getItem('userBodyType');
-        return {
-            gender: savedGender || 'Male',
-            bodyType: savedBodyType || 'Average',
-        };
-    });
+    const [gender, setGender] = useState<string>(() => getSavedGender() || '');
+    const [bodyType, setBodyType] = useState<string>(() => getSavedBodyType() || '');
+    const requestRef = useRef<AbortController | null>(null);
 
-    // Save userId to localStorage
-    useEffect(() => {
-        localStorage.setItem('userId', userId);
+    const saveProfile = useCallback(async (updates: ProfileUpdates) => {
+        try {
+            await api.updateProfile(userId, updates);
+        } catch (err) {
+            // Local copy is kept; the next save will sync it.
+            console.error('Failed to save profile:', err);
+        }
     }, [userId]);
 
-    // Check if user has completed previous steps
-    useEffect(() => {
-        const savedColorAnalysis = localStorage.getItem('colorAnalysis');
-        const savedSizes = localStorage.getItem('userSizes');
-        const savedPreferences = localStorage.getItem('userPreferences');
-
-        if (savedColorAnalysis) {
-            setColorAnalysis(JSON.parse(savedColorAnalysis));
-            if (savedSizes && savedPreferences) {
-                // Skip to swipe if everything is done
-                loadProducts();
-                setCurrentStep('swipe');
-            } else if (savedSizes) {
-                setCurrentStep('preferences');
-            } else {
-                setCurrentStep('sizes');
-            }
-        }
-    }, []);
-
-    const handleColorAnalysisComplete = async (analysis: any) => {
-        if (analysis) {
-            setColorAnalysis(analysis);
-            localStorage.setItem('colorAnalysis', JSON.stringify(analysis));
-            
-            // Ensure gender is stored in localStorage
-            if (userInfo.gender) {
-                localStorage.setItem('userGender', userInfo.gender);
-            }
-
-            // Save color analysis to backend
-            try {
-                await fetch('http://localhost:5000/update_user_info', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userId: userId,
-                        updates: {
-                            color_analysis: analysis,
-                            gender: userInfo.gender,
-                            body_type: userInfo.bodyType,
-                        }
-                    })
-                });
-            } catch (err) {
-                console.error('Failed to save color analysis:', err);
-            }
-        }
-
-        setCurrentStep('sizes');
-    };
-
-    const handleSizesSubmit = async (sizes: any) => {
-        localStorage.setItem('userSizes', JSON.stringify(sizes));
-
-        // Save sizes to backend
-        try {
-            await fetch('http://localhost:5000/update_user_info', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: userId,
-                    updates: {
-                        clothing_sizes: sizes,
-                    }
-                })
-            });
-        } catch (err) {
-            console.error('Failed to save sizes:', err);
-        }
-
-        setCurrentStep('preferences');
-    };
-
-    const handlePreferencesSubmit = async (prefs: any) => {
-        localStorage.setItem('userPreferences', JSON.stringify(prefs));
-
-        // Save preferences to backend
-        try {
-            await fetch('http://localhost:5000/update_user_info', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: userId,
-                    updates: {
-                        style_preferences: prefs.styles,
-                        budget_range: prefs.budget,
-                    }
-                })
-            });
-        } catch (err) {
-            console.error('Failed to save preferences:', err);
-        }
-
-        // Load products for swiping
-        setCurrentStep('loading');
-        await loadProducts();
-        setCurrentStep('swipe');
-    };
-
-    const loadProducts = async () => {
+    /** Search retailers for the user's gender, then rank for this user. */
+    const loadProducts = useCallback(async (searchGender: string) => {
+        requestRef.current?.abort();
+        const controller = new AbortController();
+        requestRef.current = controller;
         setIsLoading(true);
         setError(null);
 
         try {
-            // Get gender from localStorage (ensure it's saved)
-            const savedGender = localStorage.getItem('userGender') || userInfo.gender;
-            if (savedGender) {
-                localStorage.setItem('userGender', savedGender);
+            const found = await api.searchProducts(
+                { userId, gender: searchGender || undefined, brands: SWIPE_BRANDS },
+                controller.signal,
+            );
+            let deck = found.products;
+            try {
+                const ranked = await api.rankProducts(userId, found.products, { excludeSwiped: true }, controller.signal);
+                deck = ranked.recommendations;
+            } catch (err) {
+                if (isAbortError(err)) throw err;
+                console.error('Ranking failed, showing unranked products:', err);
             }
-
-            // Scrape products based on user preferences (gender is always included)
-            const response = await fetch('http://localhost:5000/scrape_products', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userData: {
-                        userId: userId,
-                        gender: savedGender,
-                        bodyType: userInfo.bodyType,
-                        colorAnalysisResult: colorAnalysis,
-                        brands: ['Amazon', 'Flipkart', 'Myntra']
-                    },
-                    filters: {},
-                    prompt: 'fashion clothing' // Gender and cloth type will be added automatically
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to load products');
-            }
-
-            const data = await response.json();
-
-            // Get personalized recommendations (already filtered by gender in backend)
-            const recsResponse = await fetch('http://localhost:5000/personalized_recommendations', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: userId,
-                    products: data.products
-                })
-            });
-
-            if (recsResponse.ok) {
-                const recsData = await recsResponse.json();
-                setProducts(recsData.recommendations || data.products);
-            } else {
-                setProducts(data.products);
-            }
-
+            setProducts(deck);
+            setCurrentStep('swipe');
         } catch (err) {
-            setError('Failed to load products. Please try again.');
-            console.error('Error loading products:', err);
+            if (isAbortError(err)) return;
+            setError(errorMessage(err, 'Failed to load products. Please try again.'));
+            setCurrentStep('swipe');
         } finally {
-            setIsLoading(false);
+            if (requestRef.current === controller) setIsLoading(false);
         }
+    }, [userId]);
+
+    // Resume onboarding where the user left off.
+    useEffect(() => {
+        if (!hasStored(STORAGE_KEYS.colorAnalysis)) return;
+        if (profileCache.sizes() && profileCache.preferences()) {
+            setCurrentStep('loading');
+            loadProducts(getSavedGender() || '');
+        } else if (profileCache.sizes()) {
+            setCurrentStep('preferences');
+        } else {
+            setCurrentStep('sizes');
+        }
+        return () => requestRef.current?.abort();
+    }, [loadProducts]);
+
+    const handleColorAnalysisComplete = (analysis: ColorAnalysisResult | null) => {
+        // "null" means the user skipped; remember that so we don't ask again.
+        writeJSON(STORAGE_KEYS.colorAnalysis, analysis);
+        if (analysis) {
+            saveProfile({ color_analysis: analysis });
+        }
+        setCurrentStep('sizes');
     };
 
-    const handleSwipeComplete = () => {
-        // Navigate to personalized homepage
-        navigate('/home');
+    const handleSizesSubmit = (sizes: ClothingSizes) => {
+        writeJSON(STORAGE_KEYS.sizes, sizes);
+        saveGenderAndBody(sizes.gender, sizes.physique);
+        setGender(sizes.gender);
+        setBodyType(sizes.physique);
+        saveProfile({ clothing_sizes: sizes, gender: sizes.gender, body_type: sizes.physique });
+        setCurrentStep('preferences');
     };
 
-    const handleExit = () => {
-        // Go back to main homepage
-        navigate('/');
+    const handlePreferencesSubmit = (prefs: StylePreferences) => {
+        writeJSON(STORAGE_KEYS.preferences, prefs);
+        saveProfile({
+            style_preferences: prefs.styles,
+            occasions: prefs.occasions,
+            budget_range: prefs.budget,
+        });
+        setCurrentStep('loading');
+        loadProducts(gender);
+    };
+
+    const skipPreferences = () => {
+        writeJSON(STORAGE_KEYS.preferences, { styles: [], occasions: [], budget: { min: 0, max: 0 } });
+        setCurrentStep('loading');
+        loadProducts(gender);
     };
 
     return (
@@ -229,16 +138,14 @@ export const SwipePage: React.FC = () => {
                 isOpen={currentStep === 'sizes'}
                 onClose={() => setCurrentStep('preferences')}
                 onSubmit={handleSizesSubmit}
-                gender={userInfo.gender}
+                gender={gender || undefined}
+                physique={bodyType || undefined}
             />
 
             {/* Style Preferences Modal */}
             <StylePreferencesModal
                 isOpen={currentStep === 'preferences'}
-                onClose={() => {
-                    setCurrentStep('loading');
-                    loadProducts().then(() => setCurrentStep('swipe'));
-                }}
+                onClose={skipPreferences}
                 onSubmit={handlePreferencesSubmit}
             />
 
@@ -246,13 +153,13 @@ export const SwipePage: React.FC = () => {
             {(isLoading || currentStep === 'loading') && (
                 <LoadingScreen
                     message="Finding Perfect Matches..."
-                    submessage="Analyzing thousands of products just for you"
+                    submessage="Searching Amazon, Flipkart and Myntra for you"
                 />
             )}
 
             {/* Error State */}
             {error && !isLoading && (
-                <div className="flex-1 flex flex-col items-center justify-center p-4">
+                <div className="flex-1 flex flex-col items-center justify-center p-4" role="alert">
                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
                         <AlertCircle className="text-red-600" size={32} />
                     </div>
@@ -263,7 +170,7 @@ export const SwipePage: React.FC = () => {
                         {error}
                     </p>
                     <button
-                        onClick={loadProducts}
+                        onClick={() => loadProducts(gender)}
                         className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
                     >
                         Try Again
@@ -272,12 +179,12 @@ export const SwipePage: React.FC = () => {
             )}
 
             {/* Swipe Interface */}
-            {currentStep === 'swipe' && products.length > 0 && !isLoading && (
+            {currentStep === 'swipe' && products.length > 0 && !isLoading && !error && (
                 <SwipeInterface
                     products={products}
                     userId={userId}
-                    onComplete={handleSwipeComplete}
-                    onExit={handleExit}
+                    onComplete={() => navigate('/home')}
+                    onExit={() => navigate('/')}
                     showButtons={false}  // Gesture-only mode
                 />
             )}
@@ -289,17 +196,25 @@ export const SwipePage: React.FC = () => {
                         <AlertCircle className="text-gray-600" size={32} />
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                        No Products Found
+                        No New Products Right Now
                     </h2>
                     <p className="text-gray-600 mb-6 text-center max-w-md">
-                        We couldn't find any products at the moment. Please try again later.
+                        You've seen everything we found for now, or the stores didn't respond. Try again, or browse your personalized feed.
                     </p>
-                    <button
-                        onClick={loadProducts}
-                        className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
-                    >
-                        Retry
-                    </button>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => loadProducts(gender)}
+                            className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
+                        >
+                            Retry
+                        </button>
+                        <button
+                            onClick={() => navigate('/home')}
+                            className="px-6 py-3 border-2 border-purple-600 text-purple-600 rounded-lg font-semibold hover:bg-purple-50 transition-colors"
+                        >
+                            Go to My Feed
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

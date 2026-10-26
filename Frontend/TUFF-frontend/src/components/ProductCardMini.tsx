@@ -1,17 +1,13 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Heart, ShoppingCart, ExternalLink } from 'lucide-react';
+import ProductImage from './ProductImage';
+import type { MiniProduct } from '@/types/fashion';
 
 interface ProductMiniProps {
-    product: {
-        product_title: string;
-        product_brand: string;
-        product_price: string;
-        product_image: string;
-        product_link: string;
-    };
-    onAddToCart: (product: any) => void;
-    onAddToWishlist: (product: any) => void;
+    product: MiniProduct;
+    onAddToCart: (product: MiniProduct) => void;
+    onAddToWishlist: (product: MiniProduct) => void;
 }
 
 export const ProductCardMini: React.FC<ProductMiniProps> = ({
@@ -42,18 +38,17 @@ export const ProductCardMini: React.FC<ProductMiniProps> = ({
         >
             {/* Image */}
             <div className="relative h-32 bg-white/5 overflow-hidden">
-                <img
+                <ProductImage
                     src={product.product_image}
                     alt={product.product_title}
                     className="w-full h-full object-cover"
-                    onError={(e) => {
-                        e.currentTarget.src = 'https://via.placeholder.com/200x200?text=No+Image';
-                    }}
                 />
 
                 {/* Wishlist heart Overlay */}
                 <button
                     onClick={handleLike}
+                    aria-label={isLiked ? 'Remove from wishlist' : 'Add to wishlist'}
+                    aria-pressed={isLiked}
                     className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-sm rounded-full hover:bg-black/60 transition-all"
                 >
                     <Heart
@@ -96,6 +91,7 @@ export const ProductCardMini: React.FC<ProductMiniProps> = ({
                         href={product.product_link}
                         target="_blank"
                         rel="noopener noreferrer"
+                        aria-label={`Open ${product.product_title} in a new tab`}
                         className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-all"
                     >
                         <ExternalLink size={14} className="text-white" />

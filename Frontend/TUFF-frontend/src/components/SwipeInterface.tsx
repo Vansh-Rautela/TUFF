@@ -2,20 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Zap, ArrowRight } from 'lucide-react';
 import SwipeCard from '../components/SwipeCard';
 import { motion, AnimatePresence } from 'framer-motion';
+import { api } from '@/lib/api';
+import { STORAGE_KEYS, readJSON, writeJSON } from '@/lib/session';
+import type { Product } from '@/types/fashion';
 
-interface Product {
-    id?: string;
-    title: string;
-    brand?: string;
-    price?: string;
-    thumbnail: string;
-    link: string;
-    category?: string;
-    color?: string;
-    style?: string;
-    tags?: string[];
-    recommendation_score?: number;
-}
+/** Show a progress checkpoint every this many swipes. */
+const CHECKPOINT_EVERY = 10;
 
 interface SwipeInterfaceProps {
     products: Product[];
@@ -39,19 +31,18 @@ export const SwipeInterface: React.FC<SwipeInterfaceProps> = ({
     const [dislikeCount, setDislikeCount] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [lastSwipe, setLastSwipe] = useState<'like' | 'dislike' | null>(null);
+    const [checkpoint, setCheckpoint] = useState(CHECKPOINT_EVERY);
 
     const currentProduct = products[currentIndex];
     const remainingProducts = products.length - currentIndex;
 
     useEffect(() => {
-        if (onSwipeUpdate) {
-            onSwipeUpdate({
-                likes: likeCount,
-                dislikes: dislikeCount,
-                remaining: remainingProducts
-            });
-        }
-    }, [currentIndex, likeCount, dislikeCount]);
+        onSwipeUpdate?.({
+            likes: likeCount,
+            dislikes: dislikeCount,
+            remaining: remainingProducts
+        });
+    }, [onSwipeUpdate, likeCount, dislikeCount, remainingProducts]);
 
     const handleSwipe = async (direction: 'like' | 'dislike') => {
         if (!currentProduct || isLoading) return;
@@ -59,78 +50,32 @@ export const SwipeInterface: React.FC<SwipeInterfaceProps> = ({
         setIsLoading(true);
         setLastSwipe(direction);
 
-        try {
-            // Save swipe action to backend
-            const response = await fetch('http://localhost:5000/swipe_action', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    userId: userId,
-                    product: {
-                        id: currentProduct.id || currentProduct.link,
-                        title: currentProduct.title,
-                        brand: currentProduct.brand,
-                        price: currentProduct.price,
-                        thumbnail: currentProduct.thumbnail,
-                        link: currentProduct.link,
-                        category: currentProduct.category,
-                        color: currentProduct.color,
-                        style: currentProduct.style,
-                        tags: currentProduct.tags
-                    },
-                    action: direction
-                })
-            });
+        // Saving is best-effort: a failed save shouldn't block swiping.
+        api.swipe(userId, { ...currentProduct, id: currentProduct.id || currentProduct.link }, direction)
+            .catch((error) => console.error('Failed to save swipe action:', error));
 
-            if (!response.ok) {
-                console.error('Failed to save swipe action');
+        if (direction === 'like') {
+            setLikeCount(prev => prev + 1);
+
+            // Keep a local copy of likes for offline display.
+            const likedProducts = readJSON<Product[]>(STORAGE_KEYS.likedProducts) || [];
+            if (!likedProducts.some((p) => p.link === currentProduct.link)) {
+                writeJSON(STORAGE_KEYS.likedProducts, [...likedProducts, currentProduct]);
             }
-
-            // Update counts
-            if (direction === 'like') {
-                setLikeCount(prev => prev + 1);
-                
-                // Store liked product in localStorage for filtering
-                const likedProducts = JSON.parse(localStorage.getItem('likedProducts') || '[]');
-                const productData = {
-                    id: currentProduct.id || currentProduct.link,
-                    title: currentProduct.title,
-                    brand: currentProduct.brand,
-                    price: currentProduct.price,
-                    thumbnail: currentProduct.thumbnail,
-                    link: currentProduct.link,
-                    product_link: currentProduct.link, // For compatibility
-                };
-                
-                // Check if already exists
-                const exists = likedProducts.some((p: any) => (p.link || p.product_link) === currentProduct.link);
-                if (!exists) {
-                    likedProducts.push(productData);
-                    localStorage.setItem('likedProducts', JSON.stringify(likedProducts));
-                }
-            } else {
-                setDislikeCount(prev => prev + 1);
-            }
-
-            // Move to next product
-            setTimeout(() => {
-                setCurrentIndex(prev => prev + 1);
-                setLastSwipe(null);
-                setIsLoading(false);
-
-                // Check if we've gone through all products
-                if (currentIndex + 1 >= products.length) {
-                    onComplete?.();
-                }
-            }, 300);
-
-        } catch (error) {
-            console.error('Error saving swipe:', error);
-            setIsLoading(false);
-            setLastSwipe(null);
+        } else {
+            setDislikeCount(prev => prev + 1);
         }
+
+        // Move to next product after the swipe animation
+        const isLast = currentIndex + 1 >= products.length;
+        setTimeout(() => {
+            setCurrentIndex(prev => prev + 1);
+            setLastSwipe(null);
+            setIsLoading(false);
+            if (isLast) {
+                onComplete?.();
+            }
+        }, 300);
     };
 
     const handleUndo = () => {
@@ -139,8 +84,8 @@ export const SwipeInterface: React.FC<SwipeInterfaceProps> = ({
         }
     };
 
-    // Show completion after 10 swipes OR all products done
-    const shouldShowCompletion = currentIndex >= 10 || currentIndex >= products.length;
+    // Show a checkpoint every CHECKPOINT_EVERY swipes, or when all products are done
+    const shouldShowCompletion = currentIndex >= checkpoint || currentIndex >= products.length;
     const hasMoreProducts = currentIndex < products.length;
 
     if (shouldShowCompletion) {
@@ -166,7 +111,7 @@ export const SwipeInterface: React.FC<SwipeInterfaceProps> = ({
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                         {hasMoreProducts && (
                             <button
-                                onClick={() => {/* Continue swiping */ }}
+                                onClick={() => setCheckpoint(currentIndex + CHECKPOINT_EVERY)}
                                 className="px-6 py-3 border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors font-semibold"
                             >
                                 Swipe More

@@ -1,47 +1,23 @@
 import { useState, useEffect } from 'react';
+import { readJSON, writeJSON } from '@/lib/session';
+import type { MiniProduct } from '@/types/fashion';
 
-interface Product {
-    product_title: string;
-    product_brand: string;
-    product_price: string;
-    product_image: string;
-    product_link: string;
-}
+type Product = MiniProduct;
 
 export const useTuffyCart = () => {
-    const [cart, setCart] = useState<Product[]>([]);
-    const [wishlist, setWishlist] = useState<Product[]>([]);
-
-    // Load from localStorage on mount
-    useEffect(() => {
-        const savedCart = localStorage.getItem('tuffyCart');
-        const savedWishlist = localStorage.getItem('tuffyWishlist');
-
-        if (savedCart) {
-            try {
-                setCart(JSON.parse(savedCart));
-            } catch (e) {
-                console.error('Error loading cart:', e);
-            }
-        }
-
-        if (savedWishlist) {
-            try {
-                setWishlist(JSON.parse(savedWishlist));
-            } catch (e) {
-                console.error('Error loading wishlist:', e);
-            }
-        }
-    }, []);
+    // Read saved lists synchronously so the save effects below never
+    // overwrite them with an empty list on first render.
+    const [cart, setCart] = useState<Product[]>(() => readJSON<Product[]>('tuffyCart') || []);
+    const [wishlist, setWishlist] = useState<Product[]>(() => readJSON<Product[]>('tuffyWishlist') || []);
 
     // Save to localStorage whenever cart changes
     useEffect(() => {
-        localStorage.setItem('tuffyCart', JSON.stringify(cart));
+        writeJSON('tuffyCart', cart);
     }, [cart]);
 
     // Save to localStorage whenever wishlist changes
     useEffect(() => {
-        localStorage.setItem('tuffyWishlist', JSON.stringify(wishlist));
+        writeJSON('tuffyWishlist', wishlist);
     }, [wishlist]);
 
     const addToCart = (product: Product) => {

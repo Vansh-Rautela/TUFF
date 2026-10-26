@@ -1,20 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Heart, X, Info, ExternalLink } from 'lucide-react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
-
-interface Product {
-  id?: string;
-  title: string;
-  brand?: string;
-  price?: string;
-  thumbnail: string;
-  link: string;
-  category?: string;
-  color?: string;
-  style?: string;
-  tags?: string[];
-  recommendation_score?: number;
-}
+import ProductImage from './ProductImage';
+import type { Product } from '@/types/fashion';
 
 interface SwipeCardProps {
   product: Product;
@@ -70,13 +58,12 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
       <div className="relative w-full h-full bg-white rounded-2xl shadow-2xl overflow-hidden">
         {/* Product Image */}
         <div className="relative h-[70%] overflow-hidden">
-          <img 
-            src={product.thumbnail || '/placeholder-product.jpg'} 
+          <ProductImage
+            src={product.thumbnail}
             alt={product.title}
+            loading={isTop ? 'eager' : 'lazy'}
             className="w-full h-full object-cover"
-            onError={(e) => {
-              e.currentTarget.src = '/placeholder-product.jpg';
-            }}
+            draggable={false}
           />
           
           {/* Gradient overlay */}
@@ -85,15 +72,16 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
           {/* Info button */}
           <button
             onClick={() => setShowDetails(!showDetails)}
+            aria-label={showDetails ? 'Hide details' : 'Show details'}
             className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg hover:bg-white transition-colors"
           >
             <Info size={20} className="text-gray-800" />
           </button>
 
           {/* Recommendation score badge */}
-          {product.recommendation_score !== undefined && product.recommendation_score > 0 && (
+          {!!product.match_score && product.match_score > 0 && (
             <div className="absolute top-4 left-4 bg-purple-500 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
-              {product.recommendation_score}% Match
+              {product.match_score}% Match
             </div>
           )}
         </div>
@@ -109,6 +97,9 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
             )}
             {product.price && (
               <p className="text-2xl font-bold text-purple-600 mb-2">{product.price}</p>
+            )}
+            {product.match_reasons && product.match_reasons.length > 0 && (
+              <p className="text-xs text-purple-700">✨ {product.match_reasons[0]}</p>
             )}
           </div>
 

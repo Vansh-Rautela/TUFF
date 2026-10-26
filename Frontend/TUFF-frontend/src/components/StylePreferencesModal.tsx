@@ -69,12 +69,12 @@ export const StylePreferencesModal: React.FC<StylePreferencesModalProps> = ({
     };
 
     const handleSubmit = () => {
+        // onClose means "skip"; the parent moves on after onSubmit.
         onSubmit({
             styles: selectedStyles,
             occasions: selectedOccasions,
             budget: budgetRange,
         });
-        onClose();
     };
 
     if (!isOpen) return null;

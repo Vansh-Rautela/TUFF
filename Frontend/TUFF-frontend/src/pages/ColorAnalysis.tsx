@@ -8,6 +8,10 @@ import { ColorCircle } from "@/components/ColorCircle";
 import { Palette, Upload, Image as ImageIcon, Eye, Droplet, SlidersHorizontal, Info, ShoppingBag, Camera, ArrowLeft } from "lucide-react";
 import Webcam from "react-webcam";
 import { Link } from "react-router-dom";
+import { api, errorMessage } from "@/lib/api";
+import { ImageInputError, downscaleDataUrl, prepareImageForUpload } from "@/lib/image";
+import { STORAGE_KEYS, getOrCreateUserId, writeJSON } from "@/lib/session";
+import type { ColorAnalysisResult, SeasonPalette } from "@/types/fashion";
 import { Badge } from "@/components/ui/badge";
 import { SkintoneMatch } from "@/components/SkintoneMatch";
 import { StyleLabel } from "@/components/StyleLabel";
@@ -33,6 +37,29 @@ const undertones = ["Warm", "Cool", "Neutral"];
 // Brightness and contrast levels
 const brightnessLevels = ["Light", "Medium", "Deep"];
 const contrastLevels = ["Low", "Medium", "High"];
+
+const EMPTY_PALETTE: SeasonPalette = {
+  season: "",
+  key_characteristics: [],
+  description: "",
+  palettes: { primary: [], neutrals: [], accent: [], jewelry_metals: [] },
+  color_relationships: { tonal: [], analogous: [], complementary_contrast: [] },
+};
+
+/** Fill any palette sections missing from the response so rendering never crashes. */
+function withPalette(result: ColorAnalysisResult) {
+  const palette = result.palette ?? EMPTY_PALETTE;
+  return {
+    skintone: result.skintone,
+    description: result.description ?? "",
+    palette: {
+      ...EMPTY_PALETTE,
+      ...palette,
+      palettes: { ...EMPTY_PALETTE.palettes, ...palette.palettes },
+      color_relationships: { ...EMPTY_PALETTE.color_relationships, ...palette.color_relationships },
+    },
+  };
+}
 
 const ColorAnalysisPage = () => {
   const [image, setImage] = useState<string | null>(null);
@@ -78,29 +105,23 @@ const ColorAnalysisPage = () => {
   const webcamRef = useRef<Webcam>(null);
   const [isWebcamOpen, setIsWebcamOpen] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image file");
-      return;
-    }
-    
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImage(reader.result as string);
-        setActiveTab("analyze");
-      };
-      reader.readAsDataURL(file);
+
+    try {
+      setImage(await prepareImageForUpload(file));
+      setActiveTab("analyze");
+    } catch (err) {
+      toast.error(err instanceof ImageInputError ? err.message : "Please upload an image file");
     }
   };
 
   const handleCapture = () => {
     const imageSrc = webcamRef.current?.getScreenshot();
     if (imageSrc) {
-      setImage(imageSrc);
+      downscaleDataUrl(imageSrc).then(setImage).catch(() => setImage(imageSrc));
       setIsWebcamOpen(false);
       setActiveTab("analyze");
     }
@@ -119,29 +140,16 @@ const ColorAnalysisPage = () => {
     setIsAnalyzing(true);
 
     try {
-      const response = await fetch('http://localhost:5000/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Analysis failed');
-      }
-
-      if (result.error) {
-        toast.error(result.error);
-      } else {
-        setAnalysisResult(result);
-        setActiveTab("results");
-        toast.success("Analysis complete!");
-      }
-    } catch (error: any) {
-      toast.error(error.message || "An error occurred during analysis.");
+      const result = await api.analyzeImage(image);
+      setAnalysisResult(withPalette(result));
+      setActiveTab("results");
+      toast.success("Analysis complete!");
+      // Reuse this result in onboarding and recommendations.
+      writeJSON(STORAGE_KEYS.colorAnalysis, result);
+      api.updateProfile(getOrCreateUserId(), { color_analysis: result })
+        .catch((err) => console.error("Failed to save color analysis:", err));
+    } catch (error) {
+      toast.error(errorMessage(error, "An error occurred during analysis."));
     } finally {
       setIsAnalyzing(false);
     }
