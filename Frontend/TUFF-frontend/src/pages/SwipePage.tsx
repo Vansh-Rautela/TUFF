@@ -53,7 +53,12 @@ export const SwipePage: React.FC = () => {
 
         try {
             const found = await api.searchProducts(
-                { userId, gender: searchGender || undefined, brands: SWIPE_BRANDS },
+                {
+                    userId,
+                    gender: searchGender || undefined,
+                    brands: SWIPE_BRANDS,
+                    filters: { styles: profileCache.preferences()?.styles ?? [] },
+                },
                 controller.signal,
             );
             let deck = found.products;

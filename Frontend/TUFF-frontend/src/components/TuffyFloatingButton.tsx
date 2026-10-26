@@ -12,6 +12,8 @@ export const TuffyFloatingButton: React.FC<TuffyFloatingButtonProps> = ({ onClic
     return (
         <motion.button
             onClick={onClick}
+            aria-label="Chat with TUFFY, your AI stylist"
+            title="Chat with TUFFY"
             onHoverStart={() => setIsHovered(true)}
             onHoverEnd={() => setIsHovered(false)}
             className="fixed bottom-6 right-6 z-40 group"

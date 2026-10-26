@@ -59,6 +59,7 @@ export const PersonalizedHomepage: React.FC = () => {
     const [colorAnalysis, setColorAnalysis] = useState<ColorAnalysisResult | null>(null);
     const [gender, setGender] = useState<string>(() => getSavedGender() || '');
     const [hasProfile, setHasProfile] = useState(true);
+    const [styles, setStyles] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -68,7 +69,7 @@ export const PersonalizedHomepage: React.FC = () => {
     const requestRef = useRef<AbortController | null>(null);
 
     /** Search + rank. Takes its inputs explicitly so it never reads stale state. */
-    const loadRecommendedProducts = useCallback(async (opts: { query: string; brands: string[]; gender: string }) => {
+    const loadRecommendedProducts = useCallback(async (opts: { query: string; brands: string[]; gender: string; styles: string[] }) => {
         requestRef.current?.abort();
         const controller = new AbortController();
         requestRef.current = controller;
@@ -80,7 +81,7 @@ export const PersonalizedHomepage: React.FC = () => {
                 userId,
                 gender: opts.gender || undefined,
                 brands: opts.brands,
-                filters: { brands: opts.brands },
+                filters: { brands: opts.brands, styles: opts.styles },
                 prompt: opts.query,
             }, controller.signal);
             const ranked = await api.rankProducts(userId, found.products, {}, controller.signal);
@@ -115,8 +116,11 @@ export const PersonalizedHomepage: React.FC = () => {
                 setColorAnalysis(feed.color_analysis ?? null);
                 const profileGender = feed.profile?.gender || getSavedGender() || '';
                 setGender(profileGender);
+                const profileStyles = feed.profile?.style_preferences ?? [];
+                setStyles(profileStyles);
                 setLikedProducts((feed.recent_likes ?? []).slice(-6).reverse().map(swipeToProduct));
-                await loadRecommendedProducts({ query: '', brands: [], gender: profileGender });
+                // Seed the default search with a preferred style, so it isn't just "clothing".
+                await loadRecommendedProducts({ query: '', brands: [], gender: profileGender, styles: profileStyles });
             } catch (err) {
                 if (!cancelled) {
                     setError(errorMessage(err, 'Could not load your feed.'));
@@ -132,7 +136,7 @@ export const PersonalizedHomepage: React.FC = () => {
     }, [userId, loadRecommendedProducts]);
 
     const handleSearch = () => {
-        loadRecommendedProducts({ query: searchQuery, brands: selectedBrands, gender });
+        loadRecommendedProducts({ query: searchQuery, brands: selectedBrands, gender, styles });
     };
 
     const handleResetProfile = () => {
@@ -384,7 +388,7 @@ export const PersonalizedHomepage: React.FC = () => {
                 onClose={() => setShowBrandFilter(false)}
                 onApply={(brands) => {
                     setSelectedBrands(brands);
-                    loadRecommendedProducts({ query: searchQuery, brands, gender });
+                    loadRecommendedProducts({ query: searchQuery, brands, gender, styles });
                 }}
                 currentBrands={selectedBrands}
             />
