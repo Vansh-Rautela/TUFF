@@ -1,0 +1,57 @@
+[project]
+name = "tuff-backend"
+version = "2.0.0"
+description = "TUFF API: color analysis, product search and personalized ranking"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "python-multipart>=0.0.12",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "aiosqlite>=0.20",
+    "alembic>=1.14",
+    "httpx>=0.28",
+    "selectolax>=0.4",
+    "playwright>=1.48",
+    "numpy>=2.1",
+    "opencv-contrib-python>=4.10",  # same wheel mediapipe uses; never mix with opencv-python*
+    "mediapipe>=0.10.21",
+    "google-genai>=1.20",
+]
+
+[project.optional-dependencies]
+# Selenium scrapers for the 12 stores that don't have a fast provider yet.
+legacy-scrapers = [
+    "selenium>=4.25",
+    "pandas>=2.2",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["app/services/search/legacy", "migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "SIM"]
+ignore = ["B008"]

@@ -1,6 +1,5 @@
 # Python Virtual Environments
 venv/
-Backend/venv/
 env/
 .venv/
 ENV/
@@ -19,25 +18,23 @@ dist/
 dist-ssr/
 build/
 out/
-Frontend/package-lock.json
 
 # Environment configs & secrets
 .env
-Backend/.env
 *.env
 *.env.local
 
 # Database & SQLite files
-Backend/product_cache.db
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+backend/data/
 
-# User-generated data
-Backend/uploads/*
-!Backend/uploads/.gitkeep
-Backend/user_data/*
-!Backend/user_data/.gitkeep
+# Downloaded ML models (uv run python -m scripts.download_models)
+backend/models/*
+!backend/models/README.md
 
 # OS / Editor files
 .DS_Store
@@ -50,15 +47,11 @@ Thumbs.db
 *.sln
 *.sw?
 
-# Scraping Debug & Temporary files
-Backend/Webscraping/*debug.html
-Backend/Webscraping/*error.png
-Backend/Webscraping/.conda/
-Backend/Webscraping/amazon_products.csv
+# Scraping debug artifacts
+*debug.html
+*_error.png
 
 
 # Local tooling
-Backend/.venv/
 .pytest_cache/
-Backend/Webscraping/*.png
-Backend/*.png
+.ruff_cache/
