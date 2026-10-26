@@ -67,6 +67,8 @@ def _scrape_amazon_results(driver, url, data):
         try:
             # Multiple title selectors for Amazon
             title_selectors = [
+                # Fashion results have two h2s: maker brand, then the product name.
+                ".//h2[contains(@class, 'a-text-normal')]",
                 ".//span[@class='a-size-medium a-color-base a-text-normal']",
                 ".//h2[@class='s-result-item']//span",
                 ".//h2//a//span[@class='a-size-base-plus']",
@@ -188,7 +190,14 @@ def scrape_flipkart(query):
                             break
                 except:
                     continue
-            
+
+            # Flipkart rotates its class names; the first "₹" text in a card is
+            # the selling price (the struck-through MRP comes after it).
+            if price == "No price":
+                rupee_text = item.find(string=re.compile('₹'))
+                if rupee_text:
+                    price = clean_price(str(rupee_text))
+
             # Image extraction
             image = "No image"
             try:
