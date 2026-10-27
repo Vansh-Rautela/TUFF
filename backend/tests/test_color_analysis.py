@@ -113,7 +113,10 @@ def test_real_photo_produces_complete_reading(analyzer):
     assert set(result["axes"]) == {"warmth", "lightness", "clarity"}
 
 
-@pytest.mark.skipif(not models_present or not (FACES / "small_face_full_length.webp").exists(), reason="models/photo missing")
+SMALL_FACE = FACES / "small_face_full_length.webp"
+
+
+@pytest.mark.skipif(not models_present or not SMALL_FACE.exists(), reason="models/photo missing")
 def test_small_face_found_via_detector_and_crop(analyzer):
     result = analyzer.analyze(cv2.imread(str(FACES / "small_face_full_length.webp")))
     assert result["quality"]["detector"] == "yunet+face-landmarker"

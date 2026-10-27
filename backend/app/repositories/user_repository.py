@@ -55,9 +55,23 @@ async def delete_user(session: AsyncSession, user_id: str) -> None:
 
 async def record_interaction(session: AsyncSession, user_id: str, product: Product, action: str) -> None:
     session.add(Interaction(user_id=user_id, product_id=product.id, action=action))
-    if action == "like" and await session.get(SavedItem, (user_id, product.id)) is None:
+    if action in ("like", "love") and await session.get(SavedItem, (user_id, product.id)) is None:
         session.add(SavedItem(user_id=user_id, product_id=product.id))
     await session.flush()
+
+
+async def undo_last_interaction(session: AsyncSession, user_id: str) -> Interaction | None:
+    """Remove the most recent swipe; un-save the product if that swipe saved it."""
+    last = await session.scalar(select(Interaction).where(Interaction.user_id == user_id)
+                                .order_by(Interaction.created_at.desc(), Interaction.id.desc()).limit(1))
+    if last is None:
+        return None
+    if last.action in ("like", "love"):
+        await session.execute(delete(SavedItem).where(SavedItem.user_id == user_id,
+                                                      SavedItem.product_id == last.product_id))
+    await session.delete(last)
+    await session.flush()
+    return last
 
 
 async def interactions(session: AsyncSession, user_id: str, limit: int = 500) -> list[Interaction]:

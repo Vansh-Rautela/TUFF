@@ -2,7 +2,7 @@
 import hashlib
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Product, SearchResult, utcnow
@@ -48,6 +48,17 @@ async def measured_colors(session: AsyncSession, urls: list[str]) -> dict[str, s
     rows = await session.execute(select(Product.id, Product.color_hex).where(
         Product.id.in_(ids), Product.color_hex.is_not(None)))
     return dict(rows.all())
+
+
+async def candidate_products(session: AsyncSession, *, gender: str | None, exclude_ids: set[str],
+                             max_age_days: int = 14, limit: int = 400) -> list[Product]:
+    """Recently seen catalog products the user hasn't swiped, compatible with their gender."""
+    since = datetime.now(UTC) - timedelta(days=max_age_days)
+    query = select(Product).where(Product.last_seen_at >= since).order_by(Product.last_seen_at.desc()).limit(limit)
+    opposite = {"men": "women", "women": "men"}.get(gender or "")
+    if opposite:
+        query = query.where(or_(Product.gender.is_(None), Product.gender != opposite))
+    return [p for p in (await session.scalars(query)).all() if p.id not in exclude_ids]
 
 
 async def get_products(session: AsyncSession, ids: list[str]) -> list[Product]:

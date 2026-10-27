@@ -55,7 +55,7 @@ class ProfileOut(BaseModel):
 
 class InteractionIn(BaseModel):
     product_id: str = Field(min_length=40, max_length=40)
-    action: Literal["like", "dislike"]
+    action: Literal["like", "love", "dislike"]
 
 
 class SavedItemOut(BaseModel):
@@ -71,3 +71,49 @@ class Insights(BaseModel):
     top_stores: list[str]
     favorite_colors: list[dict]
     typical_price: float | None
+
+
+class DeckCardOut(BaseModel):
+    product: ProductOut
+    tag: Literal["for_you", "new_direction"]
+
+
+class TasteLearning(BaseModel):
+    swipes: int
+    confidence: float
+    colors: list[str]
+    categories: list[str]
+
+
+class DeckOut(BaseModel):
+    cards: list[DeckCardOut]
+    learning: TasteLearning
+
+
+class UndoOut(BaseModel):
+    product: ProductOut | None
+    action: str | None
+
+
+class HarmonyOut(BaseModel):
+    kind: str
+    score: float
+    explanation: str
+
+
+class OutfitOut(BaseModel):
+    items: list[ProductOut]
+    harmony: HarmonyOut
+    score: float
+
+
+class PartnerSuggestion(BaseModel):
+    product: ProductOut
+    need: str
+    colors: list[dict]
+    query: str
+
+
+class LookbookOut(BaseModel):
+    outfits: list[OutfitOut]
+    suggestions: list[PartnerSuggestion]

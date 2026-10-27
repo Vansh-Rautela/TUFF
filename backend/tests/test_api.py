@@ -190,3 +190,38 @@ async def test_rate_limit(client, services):
     services.settings.rate_limit_search = 2
     codes = [(await client.get(f"{API}/products/search", params={"q": "a"})).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
+
+
+# ---- adaptive deck, love, undo, lookbook ----------------------------------------------------
+
+
+async def test_deck_love_and_undo(client, user_id):
+    await client.patch(f"{API}/users/{user_id}/profile", json={"gender": "women"})
+    await client.get(f"{API}/products/search", params={"q": "kurta"})  # warm the catalog
+    deck = (await client.get(f"{API}/users/{user_id}/deck", params={"size": 3})).json()
+    assert 1 <= len(deck["cards"]) <= 3 and deck["learning"]["swipes"] == 0
+    assert all(c["tag"] in {"for_you", "new_direction"} for c in deck["cards"])
+    assert all(c["product"]["gender"] != "men" for c in deck["cards"])
+
+    first = deck["cards"][0]["product"]
+    love = {"product_id": first["id"], "action": "love"}
+    response = await client.post(f"{API}/users/{user_id}/interactions", json=love)
+    assert response.status_code == 204
+    assert [s["product"]["id"] for s in (await client.get(f"{API}/users/{user_id}/saved")).json()] == [first["id"]]
+    deck = (await client.get(f"{API}/users/{user_id}/deck")).json()
+    assert first["id"] not in {c["product"]["id"] for c in deck["cards"]}
+    assert deck["learning"]["swipes"] == 1
+
+    undone = (await client.post(f"{API}/users/{user_id}/interactions/undo")).json()
+    assert undone["action"] == "love" and undone["product"]["id"] == first["id"]
+    assert (await client.get(f"{API}/users/{user_id}/saved")).json() == []
+    assert (await client.post(f"{API}/users/{user_id}/interactions/undo")).json() == {"product": None, "action": None}
+
+
+async def test_lookbook_pairs_saved_pieces(client, user_id):
+    products = (await client.get(f"{API}/products/search", params={"q": "x", "store": "Flipkart"})).json()["products"]
+    top = next(p for p in products if p["title"] == "Women Rust Casual Top")
+    await client.post(f"{API}/users/{user_id}/interactions", json={"product_id": top["id"], "action": "like"})
+    body = (await client.get(f"{API}/users/{user_id}/lookbook")).json()
+    assert body["outfits"] == []
+    assert body["suggestions"][0]["need"] == "bottom" and body["suggestions"][0]["colors"]

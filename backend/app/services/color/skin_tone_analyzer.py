@@ -4,13 +4,17 @@ Pipeline
     1. Locate the face (468+10 landmarks, or a box as fallback).
     2. Correct white balance using the eye whites as a neutral reference.
     3. Build a dense skin mask (face oval minus eyes, brows, lips, nostrils).
-    4. Clean the pixels: drop shadows/highlights and non-skin hues, then take
-       the dominant k-means cluster in CIELAB.
-    5. Measure: ITA° (depth), hue angle (undertone), chroma, and contrast
-       against brows (hair proxy) and irises.
-    6. Score all 12 seasons on three axes (warmth, depth, clarity) and report
-       the best match, alternatives and a confidence that accounts for photo
-       quality.
+    4. Measure apparent skin colour the way Thong & Xiang (ICCV 2023, "Beyond
+       Skin Tone") do: k-means (k=5) on skin pixels, per-cluster histogram
+       modes of perceptual lightness L* and hue angle h*, keep the three
+       lightest clusters (drops shadows and stubble), size-weighted average.
+    5. Axes: L* -> value (light/dark boundary L*=60), h* -> warmth (red/yellow
+       boundary h*=55°; h* is stable under relighting, L* is not), chroma and
+       contrast against brows (hair proxy) and irises -> clarity. ITA° is
+       still reported as a dermatology category but not used for scoring.
+    6. Decide temperature first, then the season within it (hierarchical, as
+       in the JICCE 2025 seasonal classifier, whose errors stay within the
+       same temperature), with a confidence discounted by photo quality.
 
 This is an estimate from pixels, not a calibrated measurement; the response
 says so and lists anything about the photo that reduced confidence.
@@ -48,12 +52,16 @@ from app.services.color.face_landmarks import (
 from app.services.color.seasonal_palettes import SEASONS, Season
 from app.services.color.white_balance import correct_white_balance
 
-# Calibration constants (CIELAB). Typical skin hue angles fall between ~45° (pink/red)
-# and ~70° (golden); the midpoint separates cool from warm undertones.
-HUE_NEUTRAL = 57.0
+# Calibration constants (CIELAB).
+HUE_NEUTRAL = 55.0   # h* red/yellow boundary (Thong & Xiang 2023, after Ly et al.)
 HUE_SPAN = 7.0
-ITA_MID = 28.0       # boundary between "light" and "deep" value
-ITA_SPAN = 25.0
+# Thong & Xiang split light/dark apparent skin at L*=60 for dataset analysis. Seasonal
+# "value" is judged differently, and with their lightest-cluster measurement our
+# white-balanced photos sit higher, so the midpoint is provisionally 68. Re-fit both
+# constants on a labelled portrait set (docs/IMPLEMENTATION_ROADMAP.md).
+LIGHTNESS_MID = 68.0
+LIGHTNESS_SPAN = 10.0
+TEMPERATURE_CLEAR = 0.15  # |warmth| above this: restrict to warm or cool families
 CONTRAST_MID = 42.0  # ΔL* between skin and brows/eyes
 CONTRAST_SPAN = 18.0
 CHROMA_MID = 26.0
@@ -71,7 +79,11 @@ DOMINANT_AXIS = {"warm": (0, 1), "cool": (0, -1), "light": (1, 1), "deep": (1, -
 @dataclass
 class _Measurement:
     lab: np.ndarray
+    lightness: float  # L*
+    hue: float        # h* in degrees
+    chroma: float     # C*ab
     pixel_count: int
+    clusters_used: int
 
 
 def _clip_unit(value: float) -> float:
@@ -119,8 +131,9 @@ def _measure_skin(lab_image: np.ndarray, mask: np.ndarray) -> _Measurement:
         raise InvalidInputError("We couldn't see enough skin. Use a front-facing photo without heavy shadows.",
                                 code="not_enough_skin")
     lch = lab_to_lch(pixels)
-    low, high = np.percentile(pixels[:, 0], [8, 97])
-    keep = (pixels[:, 0] >= low) & (pixels[:, 0] <= high)     # shadows and specular highlights
+    # Only specular highlights are cut here; shadows are removed by the cluster
+    # selection below (keeping the lightest clusters), as in Thong & Xiang.
+    keep = pixels[:, 0] <= np.percentile(pixels[:, 0], 98)
     keep &= (lch[:, 1] > 4) & (lch[:, 1] < 60)                # grey/background and lipstick-like chroma
     keep &= (lch[:, 2] > 15) & (lch[:, 2] < 100)              # plausible skin hues
     pixels = pixels[keep]
@@ -128,13 +141,37 @@ def _measure_skin(lab_image: np.ndarray, mask: np.ndarray) -> _Measurement:
         raise InvalidInputError("The lighting makes skin hard to read. Try soft daylight facing a window.",
                                 code="not_enough_skin")
 
-    sample = pixels[np.random.default_rng(7).choice(len(pixels), size=min(len(pixels), 5000), replace=False)]
+    sample = pixels[np.random.default_rng(7).choice(len(pixels), size=min(len(pixels), 6000), replace=False)]
+    sample_lch = lab_to_lch(sample)
+    k = 5 if len(sample) >= 500 else 1
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
-    k = 3 if len(sample) >= 300 else 1
-    _, labels, centers = cv2.kmeans(sample.astype(np.float32), k, None, criteria, 3, cv2.KMEANS_PP_CENTERS)
-    dominant = int(np.bincount(labels.ravel()).argmax())
-    cluster = sample[labels.ravel() == dominant]
-    return _Measurement(lab=np.median(cluster, axis=0), pixel_count=int(len(pixels)))
+    _, labels, _ = cv2.kmeans(sample.astype(np.float32), k, None, criteria, 3, cv2.KMEANS_PP_CENTERS)
+    labels = labels.ravel()
+
+    clusters = []  # (size, L* mode, h* mode, chroma median)
+    for index in range(k):
+        members = sample_lch[labels == index]
+        if len(members) < 10:
+            continue
+        clusters.append((len(members), _histogram_mode(members[:, 0]), _histogram_mode(members[:, 2]),
+                         float(np.median(members[:, 1]))))
+    clusters.sort(key=lambda c: c[1], reverse=True)
+    kept = clusters[:3] if len(clusters) > 3 else clusters
+    sizes = np.array([c[0] for c in kept], dtype=np.float64)
+    lightness = float(np.average([c[1] for c in kept], weights=sizes))
+    hue = float(np.average([c[2] for c in kept], weights=sizes))
+    chroma = float(np.average([c[3] for c in kept], weights=sizes))
+    lab = np.array([lightness, chroma * np.cos(np.radians(hue)), chroma * np.sin(np.radians(hue))])
+    return _Measurement(lab=lab, lightness=lightness, hue=hue, chroma=chroma, pixel_count=int(len(pixels)),
+                        clusters_used=len(kept))
+
+
+def _histogram_mode(values: np.ndarray) -> float:
+    """Mode of a 1-D sample using Sturges' rule for the bin count (as in Thong & Xiang 2023)."""
+    bins = int(np.ceil(np.log2(len(values)) + 1))
+    counts, edges = np.histogram(values, bins=bins)
+    peak = int(counts.argmax())
+    return float((edges[peak] + edges[peak + 1]) / 2)
 
 
 def _measure_feature(lab_image: np.ndarray, mask: np.ndarray | None, darkest_fraction: float) -> np.ndarray | None:
@@ -203,10 +240,10 @@ def _season_payload(season: Season) -> dict:
     }
 
 
-def _undertone(hue: float) -> str:
-    if hue >= HUE_NEUTRAL + 2.5:
+def _undertone(warmth: float) -> str:
+    if warmth > TEMPERATURE_CLEAR:
         return "Warm"
-    if hue <= HUE_NEUTRAL - 2.5:
+    if warmth < -TEMPERATURE_CLEAR:
         return "Cool"
     return "Neutral"
 
@@ -240,16 +277,22 @@ class SkinToneAnalyzer:
         brows = _measure_feature(lab_image, masks["brows"], darkest_fraction=0.5)
         iris = _measure_feature(lab_image, masks["iris"], darkest_fraction=0.85)
 
-        L, chroma, hue = (float(v) for v in lab_to_lch(skin.lab))
+        L, chroma, hue = skin.lightness, skin.chroma, skin.hue
         ita = individual_typology_angle(skin.lab)
         contrasts = [abs(L - float(f[0])) for f in (brows, iris) if f is not None]
         contrast = max(contrasts) if contrasts else CONTRAST_MID
 
-        warmth = _clip_unit((hue - HUE_NEUTRAL) / HUE_SPAN)
-        lightness = _clip_unit((ita - ITA_MID) / ITA_SPAN)
+        # Hue angle is only meaningful with enough chroma; near-grey readings pull towards neutral.
+        warmth = _clip_unit((hue - HUE_NEUTRAL) / HUE_SPAN) * min(1.0, chroma / 15.0)
+        lightness = _clip_unit((L - LIGHTNESS_MID) / LIGHTNESS_SPAN)
         clarity = _clip_unit(0.6 * (contrast - CONTRAST_MID) / CONTRAST_SPAN
                              + 0.4 * (chroma - CHROMA_MID) / CHROMA_SPAN)
         scores = _season_scores((warmth, lightness, clarity))
+        # Hierarchical: when the undertone is clearly warm or cool, only that temperature's
+        # families compete (Spring/Autumn vs Summer/Winter).
+        if abs(warmth) > TEMPERATURE_CLEAR:
+            allowed = {"Spring", "Autumn"} if warmth > 0 else {"Summer", "Winter"}
+            scores = {name: score for name, score in scores.items() if SEASONS[name].family in allowed}
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
         # Softmax over the 12 seasons, then discounted by photo quality.
@@ -269,12 +312,14 @@ class SkinToneAnalyzer:
             "skin": {
                 "hex": _hex(skin.lab),
                 "lab": [round(float(v), 2) for v in skin.lab],
+                "lightness": round(L, 1),
                 "ita": round(ita, 1),
                 "depth": ita_category(ita),
-                "undertone": _undertone(hue),
+                "undertone": _undertone(warmth),
                 "hue_angle": round(hue, 1),
                 "chroma": round(chroma, 1),
                 "pixels_measured": skin.pixel_count,
+                "clusters_used": skin.clusters_used,
             },
             "features": {
                 "eyes_hex": _hex(iris) if iris is not None else None,

@@ -108,7 +108,7 @@ class FakeAnalyzer:
             "season": {**_season_payload(SEASONS[self.season]), "confidence": 0.8},
             "alternatives": [{"name": "Deep Autumn", "family": "Autumn", "likelihood": 0.2}],
             "skin": {"hex": "#B5835A", "lab": [60.0, 14.0, 28.0], "ita": 20.0, "depth": "Tan", "undertone": "Warm",
-                     "hue_angle": 63.0, "chroma": 31.0, "pixels_measured": 9000},
+                     "hue_angle": 63.0, "chroma": 31.0, "pixels_measured": 9000, "lightness": 58.0, "clusters_used": 3},
             "features": {"eyes_hex": "#3B2A20", "brows_hex": "#2A1E18", "contrast": "Medium", "contrast_value": 40.0},
             "axes": {"warmth": 80, "lightness": 40, "clarity": 45},
             "quality": {"score": 1.0, "issues": [], "white_balance": "sclera", "detector": "fake", "faces_found": 1},

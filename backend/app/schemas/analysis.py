@@ -34,12 +34,14 @@ class AlternativeSeason(BaseModel):
 class SkinReading(BaseModel):
     hex: str
     lab: list[float]
+    lightness: float
     ita: float
     depth: str
     undertone: str
     hue_angle: float
     chroma: float
     pixels_measured: int
+    clusters_used: int
 
 
 class FeatureReading(BaseModel):

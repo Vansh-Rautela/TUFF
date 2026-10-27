@@ -1,6 +1,6 @@
 """A user's learned taste, built from swipes.
 
-Every like (+1) and pass (-1) is weighted by recency with a 21-day half-life,
+Every like (+1), love (+2) and pass (-1) is weighted by recency with a 21-day half-life,
 so the profile follows changing taste. Colors are kept as CIELAB points so a
 new product can be compared by perceptual distance, not by name.
 """
@@ -54,10 +54,10 @@ def build_taste_profile(interactions: list[Interaction], now: datetime | None = 
 
     for item in interactions:
         product = item.product
-        sign = 1.0 if item.action == "like" else -1.0
+        sign = {"like": 1.0, "love": 2.0}.get(item.action, -1.0)
         weight = sign * _recency_weight(item.created_at, now)
         taste.seen_product_ids.add(product.id)
-        if item.action == "like":
+        if item.action in ("like", "love"):
             taste.likes += 1
             if product.price:
                 taste.liked_prices.append(product.price)
