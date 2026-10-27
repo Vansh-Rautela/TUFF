@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Colour analysis** | MediaPipe Face Landmarker (478 points) with an OpenCV YuNet fallback, eye-white white balance, dense skin masks, ITA° depth, CIELAB undertone, eye and brow contrast → one of **12 seasons**, with confidence and photo-quality notes. The photo is never stored. |
+| **Colour analysis** | MediaPipe Face Landmarker (478 points) with an OpenCV YuNet fallback, eye-white white balance, dense skin masks, perceptual lightness L* and hue angle h* measured as in Thong & Xiang (ICCV 2023), eye and brow contrast → temperature first, then one of **12 seasons**, with confidence and photo-quality notes. The photo is never stored. |
 | **Search** | Async HTTP-first store providers (httpx + Lexbor parser), a shared Playwright browser as fallback, all stores in parallel, results **streamed per store** (SSE), cached in SQLite. |
 | **Garment colour** | Each product's real colour is measured from its photo with OpenCV (background and skin removal, k-means in CIELAB). |
 | **Swiping** | An adaptive deck that learns from every keep, love and pass (Thompson sampling over colour and category), with undo, flip-for-details and a live taste panel. |
