@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 
 import { SiteFooter } from "@/components/layout/SiteFooter";
+import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { StylistLauncher } from "@/components/stylist/StylistDrawer";
 import { cn } from "@/lib/utils";
@@ -25,8 +26,9 @@ export function PageShell({ children, overlayHeader = false, footer = true, styl
         Skip to content
       </a>
       <SiteHeader overlay={overlayHeader} />
-      <main id="main" className={cn("flex-1", !overlayHeader && "pt-[4.5rem]", className)}>{children}</main>
-      {footer && <SiteFooter />}
+      <main id="main" className={cn("flex-1 pb-20 lg:pb-0", !overlayHeader && "pt-[4.5rem]", className)}>{children}</main>
+      {footer && <div className="pb-16 lg:pb-0"><SiteFooter /></div>}
+      <MobileTabBar />
       {stylist && <StylistLauncher />}
     </div>
   );

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { useUser } from "@/hooks/useUser";
 import { api, errorMessage } from "@/lib/api";
-import type { Product, SavedItem } from "@/types/api";
+import type { Product, SavedItem, SwipeAction } from "@/types/api";
 
 export const savedKey = (userId: string | null) => ["saved", userId] as const;
 
@@ -21,10 +21,10 @@ export function useSaved() {
   const savedIds = useMemo(() => new Set((query.data ?? []).map((s) => s.product.id)), [query.data]);
 
   const react = useMutation({
-    mutationFn: async ({ product, action }: { product: Product; action: "like" | "dislike" }) =>
+    mutationFn: async ({ product, action }: { product: Product; action: SwipeAction }) =>
       api.interact(await ensureUser(), product.id, action),
     onMutate: ({ product, action }) => {
-      if (action !== "like") return;
+      if (action === "dislike") return;
       queryClient.setQueryData<SavedItem[]>(savedKey(userId), (items = []) =>
         items.some((i) => i.product.id === product.id) ? items : [{ saved_at: new Date().toISOString(), product }, ...items],
       );
@@ -33,6 +33,7 @@ export function useSaved() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["saved"] });
       queryClient.invalidateQueries({ queryKey: ["insights"] });
+      queryClient.invalidateQueries({ queryKey: ["lookbook"] });
     },
   });
 
@@ -62,6 +63,7 @@ export function useSaved() {
     isSaved: (id: string) => savedIds.has(id),
     toggle,
     like: (product: Product) => react.mutate({ product, action: "like" }),
+    love: (product: Product) => react.mutate({ product, action: "love" }),
     pass: (product: Product) => react.mutate({ product, action: "dislike" }),
     remove: (product: Product) => remove.mutate(product),
   };

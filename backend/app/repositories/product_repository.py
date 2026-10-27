@@ -52,9 +52,13 @@ async def measured_colors(session: AsyncSession, urls: list[str]) -> dict[str, s
 
 async def candidate_products(session: AsyncSession, *, gender: str | None, exclude_ids: set[str],
                              max_age_days: int = 14, limit: int = 400) -> list[Product]:
-    """Recently seen catalog products the user hasn't swiped, compatible with their gender."""
+    """Recently seen garments (recognised clothing category) the user hasn't swiped, gender-compatible.
+
+    Vague retailer searches also return cosmetics and accessories; those have no garment
+    category and are kept out of the swipe deck."""
     since = datetime.now(UTC) - timedelta(days=max_age_days)
-    query = select(Product).where(Product.last_seen_at >= since).order_by(Product.last_seen_at.desc()).limit(limit)
+    query = (select(Product).where(Product.last_seen_at >= since, Product.category.is_not(None))
+             .order_by(Product.last_seen_at.desc()).limit(limit))
     opposite = {"men": "women", "women": "men"}.get(gender or "")
     if opposite:
         query = query.where(or_(Product.gender.is_(None), Product.gender != opposite))

@@ -25,7 +25,7 @@ from app.schemas.users import (
 )
 from app.services.color.color_names import RETAIL_COLORS
 from app.services.color.seasonal_palettes import get_season
-from app.services.recommendation.adaptive_deck import build_taste_model, compose_deck
+from app.services.recommendation.adaptive_deck import build_taste_model, compose_deck, top_up_queries
 from app.services.recommendation.outfit_builder import build_outfits, suggest_partners
 from app.services.recommendation.ranker import rank_products
 from app.services.recommendation.taste_profile import build_taste_profile
@@ -112,22 +112,20 @@ async def swipe_deck(user_id: UserId, session: SessionDep, services: ServicesDep
     seen = {i.product_id for i in history}
     pool = await products_repo.candidate_products(session, gender=profile.gender, exclude_ids=seen)
 
-    if len(pool) < size * 3:
-        # Top up the catalog: the profile's own query plus one built around a signature colour,
-        # so the deck always has something to explore.
-        season = get_season(profile.season)
-        queries = [build_query("", profile.gender, profile.styles)]
-        if season:
-            queries.append(build_query(season.signature[len(history) % len(season.signature)].name, profile.gender))
+    model = build_taste_model(history)
+    queries = top_up_queries(profile, model, pool, size)
+    if queries:
+        # Refill the catalog towards what the user likes (searches are cached, so this is cheap
+        # when repeated); always with a garment word so stores return clothing.
+        stores = services.search.resolve_stores(profile.favorite_stores)
         for query in queries:
-            await services.search.search(query, services.search.resolve_stores(profile.favorite_stores))
+            await services.search.search(build_query(query, profile.gender, profile.styles[:1]), stores)
         pool = await products_repo.candidate_products(session, gender=profile.gender, exclude_ids=seen)
 
     taste = build_taste_profile(history)
     ranked = rank_products(pool, profile, taste, exclude_seen=True, diversify=False)
     scores = {r.product.id: r.score for r in ranked}
     reasons = {r.product.id: r.reasons for r in ranked}
-    model = build_taste_model(history)
     cards = compose_deck([r.product for r in ranked], profile, model, scores, size)
     return DeckOut(
         cards=[DeckCardOut(product=ProductOut.from_product(c.product, scores.get(c.product.id),

@@ -1,6 +1,6 @@
 import type {
-  ChatReply, ColorAnalysis, Insights, Product, Profile, ProfileUpdate, SavedItem, SearchParams, SearchResponse,
-  StoreInfo, StoreStatus,
+  ChatReply, ColorAnalysis, Deck, Insights, Lookbook, Product, Profile, ProfileUpdate, SavedItem, SearchParams,
+  SearchResponse, StoreInfo, StoreStatus, SwipeAction,
 } from "@/types/api";
 
 /** Backend origin. Override with VITE_API_BASE_URL in frontend/.env. */
@@ -97,8 +97,12 @@ export const api = {
   search: (params: SearchParams, signal?: AbortSignal) =>
     request<SearchResponse>(`/products/search?${searchQueryString(params)}`, { signal }),
   stores: () => request<StoreInfo[]>("/products/stores"),
-  interact: (userId: string, productId: string, action: "like" | "dislike") =>
+  interact: (userId: string, productId: string, action: SwipeAction) =>
     request<void>(`/users/${userId}/interactions`, json("POST", { product_id: productId, action })),
+  undo: (userId: string) =>
+    request<{ product: Product | null; action: SwipeAction | null }>(`/users/${userId}/interactions/undo`, { method: "POST" }),
+  deck: (userId: string, size = 10) => request<Deck>(`/users/${userId}/deck?size=${size}`),
+  lookbook: (userId: string) => request<Lookbook>(`/users/${userId}/lookbook`),
   saved: (userId: string) => request<SavedItem[]>(`/users/${userId}/saved`),
   unsave: (userId: string, productId: string) => request<void>(`/users/${userId}/saved/${productId}`, { method: "DELETE" }),
   insights: (userId: string) => request<Insights>(`/users/${userId}/insights`),

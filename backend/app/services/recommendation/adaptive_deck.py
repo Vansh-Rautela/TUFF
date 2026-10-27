@@ -17,7 +17,7 @@ for the explore/exploit trade-off):
     high are tagged "new_direction", the rest "for_you".
 """
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -34,7 +34,15 @@ ACTION_WEIGHT = {"like": 1.0, "love": 2.0, "dislike": -1.0}
 HUE_FAMILIES = [(20, "pink"), (50, "red"), (72, "orange"), (100, "yellow"), (135, "olive"), (175, "green"),
                 (225, "teal"), (310, "blue"), (340, "purple"), (360, "pink")]
 EARTH_CHROMA = 28.0  # warm hues below this chroma read as earth tones (beige, camel, khaki, taupe)
-EXPLORATION_OBSERVATIONS = 2.0  # arms with less evidence than this count as unexplored
+EXPLORATION_OBSERVATIONS = 1.5  # recency-weighted swipes; two fresh swipes (~1.99) count as explored
+MAX_NEW_DIRECTION = 3            # exploration cards per deck, so the deck still feels personal
+# Retail words for searching a colour family when the catalog runs short of it.
+FAMILY_QUERY_WORD = {
+    "neutral-dark": "black", "neutral-light": "white", "earth": "beige", "yellow": "mustard", "orange": "orange",
+    "red": "red", "pink": "pink", "purple": "purple", "blue": "blue", "teal": "teal", "green": "green",
+    "olive": "olive",
+}
+DEFAULT_GARMENT = {"women": "kurta", "men": "shirt"}
 MATCH_WEIGHT = 0.4
 PER_BRAND = 2
 
@@ -132,21 +140,54 @@ def compose_deck(candidates: list[Product], profile: Profile | None, model: Tast
         match = match_scores.get(product.id, 50) / 100
         score = (1 - MATCH_WEIGHT) * sample + MATCH_WEIGHT * match
 
-        unexplored = (model.colors.evidence(family) < EXPLORATION_OBSERVATIONS
-                      or model.categories.evidence(category) < EXPLORATION_OBSERVATIONS)
+        # "New direction": an unexplored colour family that won on an optimistic draw.
         expected = math.sqrt(a_color / (a_color + b_color) * a_cat / (a_cat + b_cat))
-        tag = "new_direction" if model.swipes >= 4 and unexplored and sample > expected + 0.1 else "for_you"
+        exploring = (model.swipes >= 4 and model.colors.evidence(family) < EXPLORATION_OBSERVATIONS
+                     and sample > expected + 0.15)
+        tag = "new_direction" if exploring else "for_you"
         scored.append(DeckCard(product, tag, score))
 
     scored.sort(key=lambda card: card.score, reverse=True)
     deck: list[DeckCard] = []
     per_brand: dict[str, int] = defaultdict(int)
+    explorations = 0
     for card in scored:
         brand = (card.product.brand or card.product.store).lower()
         if per_brand[brand] >= PER_BRAND:
             continue
+        if card.tag == "new_direction":
+            if explorations >= MAX_NEW_DIRECTION:
+                continue
+            explorations += 1
         per_brand[brand] += 1
         deck.append(card)
         if len(deck) == size:
             break
     return deck
+
+
+def top_up_queries(profile: Profile, model: TasteModel, pool: list[Product], size: int) -> list[str]:
+    """Searches that refill the catalog when it can't serve the user's taste.
+
+    Each query names a garment so retailers return clothing, not cosmetics."""
+    garment = (model.learned(model.categories, 1) or [DEFAULT_GARMENT.get(profile.gender or "", "top")])[0]
+    queries = []
+    families = model.learned(model.colors, 2)
+    if not families:
+        season = get_season(profile.season)
+        if season:
+            families = [color_family(season.signature[model.swipes % len(season.signature)].hex) or "neutral-dark"]
+    for family in families:
+        have = sum(color_family(p.color_hex) == family for p in pool)
+        if have < size // 2 and family in FAMILY_QUERY_WORD:
+            queries.append(f"{FAMILY_QUERY_WORD[family]} {garment}")
+    # Explore: bring in one colour family the user hasn't been shown yet, so the deck can
+    # discover tastes the palette prior would never have surfaced.
+    shown = {f for f in FAMILY_QUERY_WORD if model.colors.evidence(f) >= EXPLORATION_OBSERVATIONS}
+    in_pool = Counter(color_family(p.color_hex) for p in pool)
+    unexplored = [f for f in FAMILY_QUERY_WORD if f not in shown and in_pool[f] < 2]
+    if unexplored and model.swipes >= 4:
+        queries.append(f"{FAMILY_QUERY_WORD[unexplored[model.swipes % len(unexplored)]]} {garment}")
+    if len(pool) < size * 3:
+        queries.insert(0, garment)
+    return queries

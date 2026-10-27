@@ -12,9 +12,11 @@ interface ProductCardProps {
   onToggleSave?: (product: Product) => void;
   index?: number;
   compact?: boolean;
+  /** Open an in-app quick view instead of going straight to the store. */
+  onOpen?: (product: Product) => void;
 }
 
-export function ProductCard({ product, saved, onToggleSave, index = 0, compact }: ProductCardProps) {
+export function ProductCard({ product, saved, onToggleSave, index = 0, compact, onOpen }: ProductCardProps) {
   const price = formatPrice(product.price);
   const mrp = formatPrice(product.mrp);
   const reason = product.match_reasons[0];
@@ -27,7 +29,8 @@ export function ProductCard({ product, saved, onToggleSave, index = 0, compact }
       className="group relative"
     >
       <a href={product.url} target="_blank" rel="noopener noreferrer" className="block"
-        aria-label={`${product.title}${price ? `, ${price}` : ""}, on ${product.store} (opens in a new tab)`}>
+        onClick={(e) => { if (onOpen) { e.preventDefault(); onOpen(product); } }}
+        aria-label={onOpen ? `View details of ${product.title}` : `${product.title}${price ? `, ${price}` : ""}, on ${product.store} (opens in a new tab)`}>
         <div className="relative aspect-[3/4] overflow-hidden bg-porcelain">
           <ProductImage
             src={product.image_url}

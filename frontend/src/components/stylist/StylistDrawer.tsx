@@ -24,7 +24,7 @@ export function StylistLauncher() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex h-14 items-center gap-3 rounded-full bg-ink pl-5 pr-6 text-ivory shadow-[0_18px_50px_-15px_rgba(0,0,0,0.55)] transition-transform duration-500 ease-couture hover:-translate-y-0.5"
+        className="fixed bottom-24 right-5 z-40 flex h-14 lg:bottom-6 lg:right-6 items-center gap-3 rounded-full bg-ink pl-5 pr-6 text-ivory shadow-[0_18px_50px_-15px_rgba(0,0,0,0.55)] transition-transform duration-500 ease-couture hover:-translate-y-0.5"
         aria-label="Ask the TUFF Stylist"
       >
         <Sparkles className="h-4 w-4 text-champagne" strokeWidth={1.5} />

@@ -2,7 +2,8 @@ import { Link } from "react-router-dom";
 
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageShell } from "@/components/layout/PageShell";
-import { ProductCard } from "@/components/product/ProductCard";
+import { LookbookSection } from "@/components/product/LookbookSection";
+import { ProductGrid } from "@/components/product/ProductGrid";
 import { Button } from "@/components/ui/button";
 import { useSaved } from "@/hooks/useSaved";
 import { formatPrice } from "@/lib/format";
@@ -32,11 +33,10 @@ export default function SavedPage() {
             Keep pieces while you swipe or browse, and they'll wait for you here.
           </EmptyState>
         ) : (
-          <div className="mt-12 grid grid-cols-2 gap-x-4 gap-y-12 md:grid-cols-3 md:gap-x-6 xl:grid-cols-4">
-            {saved.items.map((item, i) => (
-              <ProductCard key={item.product.id} product={item.product} index={i} saved onToggleSave={() => saved.remove(item.product)} />
-            ))}
-          </div>
+          <>
+            <ProductGrid className="mt-12" products={saved.items.map((item) => item.product)} />
+            <LookbookSection />
+          </>
         )}
       </section>
     </PageShell>

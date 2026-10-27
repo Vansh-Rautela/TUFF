@@ -51,6 +51,25 @@ describe("request", () => {
   });
 });
 
+describe("swipe endpoints", () => {
+  it("requests the adaptive deck, love and undo", async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) => json({ cards: [], learning: {} }));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.deck("u_1", 12);
+    await api.interact("u_1", "p".repeat(40), "love");
+    await api.undo("u_1");
+    await api.lookbook("u_1");
+    const calls = fetchMock.mock.calls.map(([url, init]) => [url.replace(API_BASE_URL, ""), init?.method ?? "GET"]);
+    expect(calls).toEqual([
+      ["/api/v1/users/u_1/deck?size=12", "GET"],
+      ["/api/v1/users/u_1/interactions", "POST"],
+      ["/api/v1/users/u_1/interactions/undo", "POST"],
+      ["/api/v1/users/u_1/lookbook", "GET"],
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({ product_id: "p".repeat(40), action: "love" });
+  });
+});
+
 class FakeEventSource {
   static last: FakeEventSource;
   listeners: Record<string, (e: { data: string }) => void> = {};

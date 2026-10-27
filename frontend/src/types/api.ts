@@ -53,7 +53,7 @@ export interface SeasonResult {
 export interface ColorAnalysis {
   season: SeasonResult;
   alternatives: { name: string; family: string; likelihood: number }[];
-  skin: { hex: string; lab: number[]; ita: number; depth: string; undertone: string; hue_angle: number; chroma: number; pixels_measured: number };
+  skin: { hex: string; lab: number[]; lightness: number; clusters_used: number; ita: number; depth: string; undertone: string; hue_angle: number; chroma: number; pixels_measured: number };
   features: { eyes_hex: string | null; brows_hex: string | null; contrast: string; contrast_value: number };
   axes: { warmth: number; lightness: number; clarity: number };
   quality: { score: number; issues: string[]; white_balance: string; detector: string; faces_found: number };
@@ -119,4 +119,27 @@ export interface SearchParams {
   maxPrice?: number | null;
   userId?: string | null;
   excludeSeen?: boolean;
+}
+
+export type SwipeAction = "like" | "love" | "dislike";
+
+export interface DeckCard {
+  product: Product;
+  tag: "for_you" | "new_direction";
+}
+
+export interface Deck {
+  cards: DeckCard[];
+  learning: { swipes: number; confidence: number; colors: string[]; categories: string[] };
+}
+
+export interface Outfit {
+  items: Product[];
+  harmony: { kind: string; score: number; explanation: string };
+  score: number;
+}
+
+export interface Lookbook {
+  outfits: Outfit[];
+  suggestions: { product: Product; need: string; colors: { name: string; hex: string; kind: string }[]; query: string }[];
 }

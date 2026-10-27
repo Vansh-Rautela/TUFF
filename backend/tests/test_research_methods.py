@@ -149,3 +149,20 @@ def test_new_direction_cards_are_tagged():
     tags = {c.tag for seed in range(30) for c in compose_deck(products[20:], None, model, {}, 10,
                                                                    np.random.default_rng(seed))}
     assert tags == {"for_you", "new_direction"}
+
+
+def test_exploration_is_capped_and_top_up_names_a_garment():
+    from app.services.recommendation.adaptive_deck import MAX_NEW_DIRECTION, top_up_queries
+
+    products = pool()
+    model = build_taste_model([swipe(p, "like") for p in products[:5]])
+    for seed in range(10):
+        deck = compose_deck(products[5:], None, model, {}, 10, np.random.default_rng(seed))
+        assert sum(c.tag == "new_direction" for c in deck) <= MAX_NEW_DIRECTION
+
+    loves = [swipe(p, "love") for p in products if p.color_hex == "#1E8A5A"]
+    profile = Profile(user_id="u", gender="women", season="Warm Autumn", styles=[], occasions=[], favorite_stores=[])
+    queries = top_up_queries(profile, build_taste_model(loves), [], 10)
+    assert queries[0] in {"kurta", "shirt", "dress", "jeans"}          # empty pool: a broad garment search first
+    assert any(q.startswith("green ") for q in queries)                   # then the learned colour family
+    assert all(len(q.split()) == 2 for q in queries[1:])

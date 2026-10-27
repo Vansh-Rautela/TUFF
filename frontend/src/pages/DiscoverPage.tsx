@@ -19,6 +19,8 @@ import type { Product } from "@/types/api";
 
 type Sort = "match" | "price-asc" | "price-desc";
 
+const CATEGORIES = ["kurtas", "dresses", "shirts", "trousers", "jackets", "sarees", "co-ords", "sneakers"];
+
 function sortProducts(products: Product[], sort: Sort): Product[] {
   if (sort === "match") return products;
   const price = (p: Product) => p.price ?? Number.POSITIVE_INFINITY;
@@ -72,6 +74,11 @@ export default function DiscoverPage() {
                 className="h-12 flex-1 bg-transparent font-display text-2xl font-light outline-none placeholder:text-stone/60" />
               <Button type="submit" size="sm">Search</Button>
             </form>
+          </div>
+          <div className="-mx-1 mt-10 flex gap-2 overflow-x-auto px-1 pb-1" aria-label="Browse by category">
+            {CATEGORIES.map((c) => (
+              <Chip key={c} selected={q === c} onClick={() => { setDraft(c); setSearchParams({ q: c }); }} className="shrink-0">{c}</Chip>
+            ))}
           </div>
         </div>
       </section>
