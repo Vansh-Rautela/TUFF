@@ -14,7 +14,7 @@ from app.services.container import build_services
 from app.services.search.providers.base import ProductCandidate, StoreProvider, make_candidate
 
 FIXTURES = Path(__file__).parent / "fixtures"
-ASSETS = Path(__file__).resolve().parents[2] / "frontend" / "src" / "assets"
+FACES = FIXTURES / "faces"  # stock photos: one close portrait, one full-length shot with a small face
 
 
 def solid_image(color_bgr=(40, 40, 200), size=(160, 120), background=(250, 250, 250)) -> bytes:
@@ -158,5 +158,6 @@ async def user_id(client) -> str:
 
 
 def png_upload(path: Path | None = None) -> tuple[str, io.BytesIO, str]:
-    data = path.read_bytes() if path else solid_image()
-    return ("photo.png", io.BytesIO(data), "image/png")
+    if path is None:
+        return ("photo.png", io.BytesIO(solid_image()), "image/png")
+    return (path.name, io.BytesIO(path.read_bytes()), "image/webp")

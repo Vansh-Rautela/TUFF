@@ -8,7 +8,7 @@ from app.services.color.garment_color import band_for_category, dominant_garment
 from app.services.color.seasonal_palettes import SEASONS, get_season
 from app.services.color.skin_tone_analyzer import _season_scores
 from app.services.color.white_balance import correct_white_balance
-from tests.conftest import ASSETS, solid_image
+from tests.conftest import FACES, solid_image
 
 # ---- seasons ---------------------------------------------------------------
 
@@ -101,9 +101,9 @@ def analyzer():
     locator.close()
 
 
-@pytest.mark.skipif(not models_present or not (ASSETS / "middlegirl.png").exists(), reason="models/photo missing")
+@pytest.mark.skipif(not models_present or not (FACES / "close_portrait.webp").exists(), reason="models/photo missing")
 def test_real_photo_produces_complete_reading(analyzer):
-    result = analyzer.analyze(cv2.imread(str(ASSETS / "middlegirl.png")))
+    result = analyzer.analyze(cv2.imread(str(FACES / "close_portrait.webp")))
     assert result["season"]["name"] in SEASONS
     assert 0 < result["season"]["confidence"] <= 1
     assert result["skin"]["pixels_measured"] > 1000
@@ -113,9 +113,9 @@ def test_real_photo_produces_complete_reading(analyzer):
     assert set(result["axes"]) == {"warmth", "lightness", "clarity"}
 
 
-@pytest.mark.skipif(not models_present or not (ASSETS / "hero-fashion.jpg").exists(), reason="models/photo missing")
+@pytest.mark.skipif(not models_present or not (FACES / "small_face_full_length.webp").exists(), reason="models/photo missing")
 def test_small_face_found_via_detector_and_crop(analyzer):
-    result = analyzer.analyze(cv2.imread(str(ASSETS / "hero-fashion.jpg")))
+    result = analyzer.analyze(cv2.imread(str(FACES / "small_face_full_length.webp")))
     assert result["quality"]["detector"] == "yunet+face-landmarker"
 
 

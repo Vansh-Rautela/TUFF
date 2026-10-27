@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from tests.conftest import ASSETS, png_upload
+from tests.conftest import FACES, png_upload
 
 API = "/api/v1"
 
@@ -91,12 +91,12 @@ async def test_analysis_unavailable_is_503(client, services):
 
 
 async def test_analysis_with_real_models(client, services, settings):
-    if not (settings.face_landmarker_model.exists() and (ASSETS / "middlegirl.png").exists()):
+    if not (settings.face_landmarker_model.exists() and (FACES / "close_portrait.webp").exists()):
         pytest.skip("models or sample photo missing")
     from app.services.container import _load_analyzer
 
     services.analyzer = _load_analyzer(settings)
-    response = await client.post(f"{API}/analysis/face", files={"photo": png_upload(ASSETS / "middlegirl.png")})
+    response = await client.post(f"{API}/analysis/face", files={"photo": png_upload(FACES / "close_portrait.webp")})
     body = response.json()
     assert response.status_code == 200 and body["quality"]["detector"].startswith("mediapipe")
     assert body["elapsed_ms"] < 2000
