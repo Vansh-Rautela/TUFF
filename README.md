@@ -7,6 +7,8 @@
 | **Colour analysis** | MediaPipe Face Landmarker (478 points) with an OpenCV YuNet fallback, eye-white white balance, dense skin masks, ITA° depth, CIELAB undertone, eye and brow contrast → one of **12 seasons**, with confidence and photo-quality notes. The photo is never stored. |
 | **Search** | Async HTTP-first store providers (httpx + Lexbor parser), a shared Playwright browser as fallback, all stores in parallel, results **streamed per store** (SSE), cached in SQLite. |
 | **Garment colour** | Each product's real colour is measured from its photo with OpenCV (background and skin removal, k-means in CIELAB). |
+| **Swiping** | An adaptive deck that learns from every keep, love and pass (Thompson sampling over colour and category), with undo, flip-for-details and a live taste panel. |
+| **Complete the look** | Saved pieces paired by colour harmony in CIELAB (neutral, tonal, analogous; cautious with complements), plus what to find next. |
 | **Ranking** | Palette fit by CIEDE2000, a recency-weighted taste model from swipes, budget and style; 0–100 score with reasons; MMR diversity. |
 | **Stylist** | Gemini with function calling, so answers cite real products; a rule-based concierge when no key is set. |
 
@@ -34,8 +36,8 @@ The SQLite database is created at `backend/data/tuff.db` on first start. In prod
 ## Test
 
 ```bash
-cd backend  && uv run ruff check . && uv run pytest -q          # 94 tests
-cd frontend && npm run lint && npm run typecheck && npm test && npm run build   # 14 tests
+cd backend  && uv run ruff check . && uv run pytest -q          # 114 tests
+cd frontend && npm run lint && npm run typecheck && npm test && npm run build   # 15 tests
 ```
 
 ## Layout
@@ -47,7 +49,7 @@ docs/       architecture, testing, security, database, roadmap, audit history
 research/   notebooks (not part of the app)
 ```
 
-See `docs/ARCHITECTURE.md` for how it fits together.
+See `docs/ARCHITECTURE.md` for how it fits together and `docs/RESEARCH.md` for the papers behind the colour science and the swipe deck.
 
 ## Limits
 
