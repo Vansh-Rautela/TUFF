@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** Base URL of the TUFF backend, e.g. http://localhost:5000 */
+  /** Origin of the TUFF API, e.g. http://localhost:8000 */
   readonly VITE_API_BASE_URL?: string;
 }
 

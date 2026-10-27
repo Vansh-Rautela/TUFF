@@ -2,106 +2,58 @@ import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
-	darkMode: ["class"],
-	content: [
-		"./pages/**/*.{ts,tsx}",
-		"./components/**/*.{ts,tsx}",
-		"./app/**/*.{ts,tsx}",
-		"./src/**/*.{ts,tsx}",
-	],
-	prefix: "",
-	theme: {
-		container: {
-			center: true,
-			padding: '2rem',
-			screens: {
-				'2xl': '1400px'
-			}
-		},
-		extend: {
-			fontFamily: {
-				inter: ['Inter', 'sans-serif'],
-				playfair: ['Playfair Display', 'serif'],
-			},
-			colors: {
-				border: 'hsl(var(--border))',
-				input: 'hsl(var(--input))',
-				ring: 'hsl(var(--ring))',
-				background: 'hsl(var(--background))',
-				foreground: 'hsl(var(--foreground))',
-				primary: {
-					DEFAULT: 'hsl(var(--primary))',
-					foreground: 'hsl(var(--primary-foreground))',
-					light: 'hsl(var(--primary-light))',
-					glow: 'hsl(var(--primary-glow))'
-				},
-				secondary: {
-					DEFAULT: 'hsl(var(--secondary))',
-					foreground: 'hsl(var(--secondary-foreground))'
-				},
-				destructive: {
-					DEFAULT: 'hsl(var(--destructive))',
-					foreground: 'hsl(var(--destructive-foreground))'
-				},
-				muted: {
-					DEFAULT: 'hsl(var(--muted))',
-					foreground: 'hsl(var(--muted-foreground))'
-				},
-				accent: {
-					DEFAULT: 'hsl(var(--accent))',
-					foreground: 'hsl(var(--accent-foreground))',
-					gold: 'hsl(var(--accent-gold))',
-					purple: 'hsl(var(--accent-purple))',
-					teal: 'hsl(var(--accent-teal))'
-				},
-				popover: {
-					DEFAULT: 'hsl(var(--popover))',
-					foreground: 'hsl(var(--popover-foreground))'
-				},
-				card: {
-					DEFAULT: 'hsl(var(--card))',
-					foreground: 'hsl(var(--card-foreground))',
-					premium: 'hsl(var(--card-premium))'
-				},
-				sidebar: {
-					DEFAULT: 'hsl(var(--sidebar-background))',
-					foreground: 'hsl(var(--sidebar-foreground))',
-					primary: 'hsl(var(--sidebar-primary))',
-					'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-					accent: 'hsl(var(--sidebar-accent))',
-					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-					border: 'hsl(var(--sidebar-border))',
-					ring: 'hsl(var(--sidebar-ring))'
-				}
-			},
-			borderRadius: {
-				lg: 'var(--radius)',
-				md: 'calc(var(--radius) - 2px)',
-				sm: 'calc(var(--radius) - 4px)'
-			},
-			keyframes: {
-				'accordion-down': {
-					from: {
-						height: '0'
-					},
-					to: {
-						height: 'var(--radix-accordion-content-height)'
-					}
-				},
-				'accordion-up': {
-					from: {
-						height: 'var(--radix-accordion-content-height)'
-					},
-					to: {
-						height: '0'
-					}
-				}
-			},
-			animation: {
-				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
-			}
-		}
-	},
-	plugins: [tailwindcssAnimate],
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  theme: {
+    container: { center: true, padding: { DEFAULT: "1.25rem", md: "2rem", lg: "3rem" }, screens: { "2xl": "1440px" } },
+    extend: {
+      colors: {
+        ivory: "hsl(var(--ivory))",
+        porcelain: "hsl(var(--porcelain))",
+        ink: "hsl(var(--ink))",
+        graphite: "hsl(var(--graphite))",
+        stone: "hsl(var(--stone))",
+        hairline: "hsl(var(--hairline))",
+        champagne: { DEFAULT: "hsl(var(--champagne))", soft: "hsl(var(--champagne-soft))", deep: "hsl(var(--champagne-deep))" },
+        noir: "hsl(var(--noir))",
+        bordeaux: "hsl(var(--bordeaux))",
+        sage: "hsl(var(--sage))",
+        // shadcn tokens, mapped to the TUFF palette
+        border: "hsl(var(--hairline))",
+        input: "hsl(var(--hairline))",
+        ring: "hsl(var(--champagne))",
+        background: "hsl(var(--ivory))",
+        foreground: "hsl(var(--ink))",
+        primary: { DEFAULT: "hsl(var(--ink))", foreground: "hsl(var(--ivory))" },
+        secondary: { DEFAULT: "hsl(var(--porcelain))", foreground: "hsl(var(--ink))" },
+        muted: { DEFAULT: "hsl(var(--porcelain))", foreground: "hsl(var(--stone))" },
+        accent: { DEFAULT: "hsl(var(--champagne-soft))", foreground: "hsl(var(--ink))" },
+        destructive: { DEFAULT: "hsl(var(--bordeaux))", foreground: "hsl(var(--ivory))" },
+        popover: { DEFAULT: "hsl(var(--porcelain))", foreground: "hsl(var(--ink))" },
+        card: { DEFAULT: "hsl(var(--porcelain))", foreground: "hsl(var(--ink))" },
+      },
+      fontFamily: {
+        display: ['"Cormorant Garamond"', "Georgia", "serif"],
+        sans: ["Manrope", "system-ui", "sans-serif"],
+      },
+      fontSize: {
+        eyebrow: ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.24em" }],
+      },
+      letterSpacing: { luxe: "0.32em" },
+      borderRadius: { lg: "4px", md: "3px", sm: "2px" },
+      transitionTimingFunction: { couture: "cubic-bezier(0.22, 1, 0.36, 1)" },
+      keyframes: {
+        marquee: { from: { transform: "translateX(0)" }, to: { transform: "translateX(-50%)" } },
+        "accordion-down": { from: { height: "0" }, to: { height: "var(--radix-accordion-content-height)" } },
+        "accordion-up": { from: { height: "var(--radix-accordion-content-height)" }, to: { height: "0" } },
+        shimmer: { "0%": { backgroundPosition: "-200% 0" }, "100%": { backgroundPosition: "200% 0" } },
+      },
+      animation: {
+        marquee: "marquee 40s linear infinite",
+        "accordion-down": "accordion-down 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
+        "accordion-up": "accordion-up 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
+        shimmer: "shimmer 2.2s linear infinite",
+      },
+    },
+  },
+  plugins: [tailwindcssAnimate],
 } satisfies Config;

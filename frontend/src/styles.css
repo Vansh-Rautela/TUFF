@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* TUFF design tokens (HSL triplets so Tailwind can apply opacity). */
+@layer base {
+  :root {
+    --ivory: 38 33% 94%;          /* page */
+    --porcelain: 40 40% 97%;      /* raised surfaces */
+    --ink: 30 6% 7%;              /* text, primary actions */
+    --graphite: 30 4% 22%;
+    --stone: 35 7% 51%;           /* secondary text */
+    --hairline: 37 22% 85%;       /* 1px rules and borders */
+    --champagne: 38 39% 54%;      /* the single accent */
+    --champagne-soft: 38 45% 87%;
+    --champagne-deep: 36 38% 38%;
+    --noir: 30 8% 5%;             /* dark editorial sections */
+    --bordeaux: 352 57% 28%;      /* errors, destructive */
+    --sage: 96 14% 46%;           /* success */
+    --radius: 3px;
+  }
+
+  * { @apply border-hairline; }
+  html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+  body {
+    @apply bg-ivory font-sans text-ink antialiased;
+    font-feature-settings: "ss01", "cv11";
+    text-rendering: optimizeLegibility;
+  }
+  ::selection { @apply bg-champagne-soft text-ink; }
+  h1, h2, h3, h4 { @apply font-display font-light tracking-tight; }
+  :focus-visible { @apply outline-none ring-1 ring-champagne ring-offset-2 ring-offset-ivory; }
+  img { @apply select-none; }
+}
+
+@layer components {
+  .eyebrow { @apply font-sans text-eyebrow font-medium uppercase text-stone; }
+  .display-xl { @apply font-display text-[3.25rem] font-light leading-[0.95] sm:text-7xl lg:text-[7.5rem]; }
+  .display-lg { @apply font-display text-5xl font-light leading-[1] sm:text-6xl lg:text-7xl; }
+  .display-md { @apply font-display text-4xl font-light leading-[1.05] sm:text-5xl; }
+  .hairline-b { @apply border-b border-hairline; }
+  .link-underline {
+    @apply relative after:absolute after:-bottom-0.5 after:left-0 after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-current after:transition-transform after:duration-500 after:ease-couture hover:after:origin-left hover:after:scale-x-100;
+  }
+  .skeleton {
+    @apply bg-[linear-gradient(90deg,hsl(var(--porcelain))_0%,hsl(var(--hairline))_50%,hsl(var(--porcelain))_100%)] bg-[length:200%_100%] animate-shimmer;
+  }
+  .grain::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
