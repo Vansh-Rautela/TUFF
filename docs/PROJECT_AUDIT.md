@@ -1,4 +1,6 @@
-# Project Audit — TUFF AI Fashion Finder
+# Project Audit — TUFF
+
+> This is the October 2026 audit of the v1 codebase (Flask + JSON files). Most findings were fixed on `audit/mvp-hardening` and the system was then rebuilt as v2 (`tuff-v2`); see `ARCHITECTURE.md`.
 
 Audit date: 2026-10-26/27. Baseline: GitHub `main` @ `ad9bba6` (the local copy was byte-identical; it had no `.git`, so history was re-attached and work happens on branch `audit/mvp-hardening`).
 

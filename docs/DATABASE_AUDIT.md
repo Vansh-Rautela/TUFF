@@ -1,3 +1,11 @@
+# Database
+
+> **v2:** the JSON-file store described in the audit below has been replaced by SQLite through SQLAlchemy 2.0 (async, WAL mode) with Alembic migrations (`backend/migrations/versions/0001_initial_schema.py`). The schema is in `docs/ARCHITECTURE.md`. The audit's open items are resolved: deletion cascades (`DELETE /api/v1/users/{id}`), writes are transactional, and products form a real catalog. Remaining: backups (copy `backend/data/tuff.db` or use the SQLite backup API), and Postgres if the API runs as several processes.
+>
+> The v1 JSON profiles had no real user data in the repository, so no import script was written.
+
+---
+
 # Database Audit
 
 ## What is actually used

@@ -1,72 +1,38 @@
 # Testing
 
-## Commands
-
 ```bash
-# Backend (Python 3.12, from Backend/)
-uv venv --python 3.12 .venv          # or: python3.12 -m venv .venv
-uv pip install --python .venv/bin/python -r requirements-dev.txt
-.venv/bin/python -m pytest -q
-
-# Frontend (from Frontend/TUFF-frontend/)
-npm ci
-npm run lint
-npm run typecheck
-npm test
-npm run build
+cd backend  && uv run ruff check . && uv run pytest -q
+cd frontend && npm run lint && npm run typecheck && npm test && npm run build
 ```
 
-CI runs the same commands (`.github/workflows/ci.yml`) on pushes to `main` and on pull requests.
+CI (`.github/workflows/ci.yml`) runs both on pushes to `main` and on pull requests; the backend job downloads the face models first.
 
-## What the suites cover
+## Backend (94 tests, ~3.5 s)
 
-| Suite | Tests | Covers | External services |
-|---|---|---|---|
-| `Backend/tests/test_validation.py` | 20 | user-id rules, image data-URL decoding/downscaling, bad input | none |
-| `Backend/tests/test_catalog.py` | 29 | color/category/gender extraction, price parsing, normalization (NaN, placeholders), privacy-safe query building, price filters, brand interleaving, cache/TTL, timeouts, failure isolation, in-flight dedupe | scrapers faked |
-| `Backend/tests/test_recommender.py` | 6 | palette/avoid colors, swipe signals, budget/style, penalties, no mutation, `None` fields | none |
-| `Backend/tests/test_user_preferences.py` | 6 | path traversal, atomic writes, old-file compatibility, type checks, likes/remove, hiding swiped items | temp dir |
-| `Backend/tests/test_tuffy.py` | 6 | missing key, system instruction & session reuse, LRU bound, error handling without leaking details, rule fallback | Gemini faked |
-| `Backend/tests/test_api.py` | 26 | every route: validation, 400/404/413/422/503 JSON errors, no disk writes for photos, search/rank/swipe/remove/feed flows | scrapers + analyzer faked, temp dir |
-| `Backend/tests/test_color_analysis.py` | 6 | palette contract for all seasons; **real MediaPipe pipeline** on a stock photo from `src/assets`; blank image → error | none (skips if CV deps missing) |
-| `Frontend src/lib/__tests__/api.test.ts` | 11 | API client: request shape, server error messages, non-JSON errors, network failure, abort, path encoding, no profile in search prompt | `fetch` stubbed |
-| `Frontend src/lib/__tests__/session.test.ts` | 7 | random id format, legacy id reuse, invalid id replacement, storage unavailable, JSON round-trip, `null` vs missing, reset | storage stubbed |
-| `Frontend src/lib/__tests__/image.test.ts` | 4 | resize math, type/size rejection | none |
-
-## Results at hand-off (2026-10-27)
-
-| Command | Result |
+| File | Covers |
 |---|---|
-| `pytest -q` (Backend) | **99 passed** (2 deprecation warnings from protobuf inside mediapipe) |
-| `npm run lint` | **0 errors**, 8 warnings (shadcn `react-refresh/only-export-components`) — baseline was 29 errors |
-| `npm run typecheck` | **pass** — baseline 1 error |
-| `npm test` | **22 passed** |
-| `npm run build` | **pass** (634 kB JS, was 659 kB) |
+| `test_color_science.py` | CIEDE2000 against the 8 published Sharma et al. reference pairs, LAB round-trips, LCh, ITA° categories, colour vocabulary |
+| `test_color_analysis.py` | 12 complete palettes, axes → season mapping, sclera white balance, garment colour on synthetic product shots; **real models** on two stock photos (close portrait; small face via YuNet + crop) and the no-face error |
+| `test_search.py` | Myntra / Flipkart / Amazon parsers on saved real store pages, tolerance of blocked or changed markup, browser fallback vs HTTP-first, query privacy, engine caching (memory and SQLite), garment colours, timeouts, failure isolation, in-flight dedupe, streaming order |
+| `test_recommendation.py` | Palette ordering by ΔE, normalisation over available signals, gender and pass filtering, learned taste, recency decay, MMR diversity, score bounds |
+| `test_stylist.py` | Concierge intents, Gemini function-calling loop (fake client), fallback on Gemini failure |
+| `test_api.py` | Every route through the ASGI app: profile lifecycle, validation error format, bad ids, data deletion, uploads (type, size, junk), 503 without analyzer, real-model analysis, anonymous vs personal search, price and store filters, swipes → wardrobe → insights, SSE stream, stylist, rate limiting |
 
-## Manual end-to-end check (performed, not automated)
+Store HTTP and product images are faked with `httpx.MockTransport`; the database is a temporary SQLite file per test.
 
-Backend + Vite dev server, real Chromium, live retailers:
+## Frontend (14 tests)
 
-1. `/swipe`: uploaded a stock photo → "Medium Warm", Autumn palette shown.
-2. Sizes: chose **Female** → saved (server file shows `gender: Female`).
-3. Styles casual + elegant, budget ≤ ₹2,000 → exactly **one** product search ran (was two).
-4. Deck showed women's products with "45% Match · Maroon is in your Autumn palette".
-5. Swiped right/left → `/liked` showed the liked item → Remove worked → empty state.
-6. `/home` → profile card, ranked products with reasons; after the style-seed change, casual wear instead of innerwear.
-7. TUFFY (no key) → friendly "not configured" message.
-8. `/color-analysis` → full palette rendered (previously crashed).
-9. 390 px wide viewport: `/home` laid out correctly. No console errors.
+`src/lib/__tests__/`: API client (query strings, multipart upload, structured errors, network failures, 204), SSE handling with a fake `EventSource`, session storage (invalid ids, blocked storage), image prep, formatting.
 
-Live search: Amazon/Flipkart/Myntra returned 17/17/16 products with titles, prices and images; cached repeat 6 ms.
+## Verified manually (2026-10-27)
 
-## Not covered / not verified
+- Live API against real stores: three stores in 2.6 s cold (72 products, all with measured colour), about 20 ms cached; analysis of a real portrait in 113 ms; like → wardrobe → insights; SSE events; concierge stylist; delete-user.
+- Garment colour against Myntra's own colour labels on 30 live products: the measured shade visually matched the garment in about 24 of 30; the name agreed with the store label in 13 of 30 (store labels are coarse, and printed fabrics are the main failure).
+- In a browser: landing page sections; onboarding end to end (real analysis → Warm Spring → preferences → personalised Discover with streaming store status and match badges).
 
-- No browser E2E automation (Playwright) yet — the journey above was manual.
-- TUFFY against the real Gemini API (no key available).
-- The 12 scrapers other than Amazon/Flipkart/Myntra.
-- The sign-up modal chain at `/?signin=1`.
-- Load, concurrency across processes, accessibility audit with a screen reader.
+## Not verified
 
-## Manual scripts (not part of the suite)
-
-`Backend/test_gemini.py`, `test_api_integrations.py`, `test_india_apis.py`, `quick_test_amazon.py`, `debug_amazon_api.py`, `list_models.py` call live paid APIs and are excluded by `pytest.ini` (`testpaths = tests`). `test_gemini.py` and `list_models.py` still use the retired `google-generativeai` package.
+- Gemini mode against the real API (no key available); covered only by a fake client.
+- In-browser rendering of `/swipe`, `/saved`, `/studio` (report view), `/profile`, the stylist drawer, and phone-width layouts. The browser extension disconnected before these were viewed. They compile under strict TypeScript and use the same API calls verified above.
+- The 12 legacy Selenium stores.
+- Load and concurrency beyond a single process.

@@ -1,3 +1,9 @@
+# Security & Privacy
+
+> **v2 status:** user ids are validated by route pattern and are 128-bit random; uploads are multipart, type- and size-checked, and decoded in memory; JSON error envelope with no internals; CORS allow-list; per-IP rate limits on search, analysis and stylist; a delete-my-data endpoint and UI; scraped links are canonical store URLs and only `https://` images are kept. Still open: no authentication (S5); the exposed Groq key in public history (S1) must be revoked by the owner.
+
+---
+
 # Security & Privacy Audit
 
 Scope: code in this repository, run locally. No penetration testing, dependency CVE scan service, or hosted deployment was available. Absence of a finding here does not mean the app is secure.
